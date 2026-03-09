@@ -20,7 +20,7 @@ export class EbnfDocumentSymbolProvider implements DocumentSymbolProvider {
 			new DocumentSymbol(
 				rule.name,
 				rule.definitionText,
-				SymbolKind.Function,
+				rule.isPseudoRule ? SymbolKind.Constant : SymbolKind.Function,
 				rule.definitionRange,
 				rule.nameRange,
 			),

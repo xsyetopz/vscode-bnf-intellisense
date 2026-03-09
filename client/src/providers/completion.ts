@@ -20,7 +20,8 @@ export class EbnfCompletionProvider implements CompletionItemProvider {
 		const items: CompletionItem[] = [];
 
 		for (const [name, rules] of symbolTable.definitions) {
-			const item = new CompletionItem(name, CompletionItemKind.Function);
+			const kind = rules[0]?.isPseudoRule ? CompletionItemKind.Constant : CompletionItemKind.Function;
+			const item = new CompletionItem(name, kind);
 			const rule = rules[0];
 			if (rule) {
 				item.detail = `${rule.name} = ${rule.definitionText} ;`;

@@ -30,7 +30,8 @@ export class EbnfHoverProvider implements HoverProvider {
 		const parts: string[] = [];
 
 		for (const rule of definitions) {
-			parts.push(`\`\`\`ebnf\n${rule.name} = ${rule.definitionText} ;\n\`\`\``);
+			const label = rule.isPseudoRule ? "_pseudo-rule_\n\n" : "";
+			parts.push(`${label}\`\`\`ebnf\n${rule.name} = ${rule.definitionText} ;\n\`\`\``);
 			if (rule.precedingComment) {
 				parts.push(rule.precedingComment);
 			}
