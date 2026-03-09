@@ -3,6 +3,7 @@ import {
 	DiagnosticSeverity,
 	type DiagnosticCollection,
 	type TextDocument,
+	workspace,
 } from "vscode";
 import type { DocumentManager } from "../document-manager";
 import { DIAGNOSTIC_SOURCE } from "../parser";
@@ -37,6 +38,22 @@ export function updateDiagnostics(
 					severity: DiagnosticSeverity.Information,
 					source: DIAGNOSTIC_SOURCE,
 				});
+			}
+		}
+	}
+
+	const unusedEnabled = workspace.getConfiguration("ebnf").get<boolean>("diagnostics.unusedRules", true);
+	if (unusedEnabled) {
+		for (const [name, rules] of symbolTable.definitions) {
+			if (!symbolTable.references.get(name)?.length) {
+				for (const rule of rules) {
+					diagnostics.push({
+						message: `Rule '${name}' is defined but never referenced`,
+						range: rule.nameRange,
+						severity: DiagnosticSeverity.Hint,
+						source: DIAGNOSTIC_SOURCE,
+					});
+				}
 			}
 		}
 	}
