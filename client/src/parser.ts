@@ -55,7 +55,9 @@ export function parse(text: string): EbnfDocument {
 
 			let bodyToken = nextNonWhitespace();
 			while (bodyToken && bodyToken.kind !== TokenKind.Semicolon) {
-				bodyTokens.push(bodyToken);
+				if (bodyToken.kind !== TokenKind.Comment) {
+					bodyTokens.push(bodyToken);
+				}
 				if (bodyToken.kind === TokenKind.Identifier) {
 					references.push({ name: bodyToken.text, range: bodyToken.range });
 				}
@@ -79,6 +81,10 @@ export function parse(text: string): EbnfDocument {
 			const endRange = semicolonToken?.range ?? lastBodyToken?.range ?? equalsToken.range;
 			const definitionText = bodyTokens.map((t) => t.text).join(" ");
 
+			const isPseudoRule =
+				bodyTokens.length === 1 &&
+				bodyTokens[0]!.kind === TokenKind.SpecialSequence;
+
 			let commentText: string | undefined;
 			if (precedingComment) {
 				commentText = precedingComment.text.slice(2, -2).trim();
@@ -89,6 +95,7 @@ export function parse(text: string): EbnfDocument {
 				nameRange: nameToken.range,
 				definitionRange: new Range(nameToken.range.start, endRange.end),
 				definitionText,
+				isPseudoRule,
 				precedingComment: commentText,
 				references,
 			});
