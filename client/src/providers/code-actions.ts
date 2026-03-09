@@ -8,6 +8,7 @@ import {
 	type Range,
 	type TextDocument,
 	WorkspaceEdit,
+	workspace,
 } from "vscode";
 
 export class EbnfCodeActionProvider implements CodeActionProvider {
@@ -22,6 +23,9 @@ export class EbnfCodeActionProvider implements CodeActionProvider {
 		_token: CancellationToken,
 	): CodeAction[] | undefined {
 		const actions: CodeAction[] = [];
+
+		const config = workspace.getConfiguration("ebnf");
+		const terminator = config.get<string>("style.terminator", ";");
 
 		for (const diag of context.diagnostics) {
 			// Match: '"foo" is not defined as a rule in this file'
@@ -41,7 +45,7 @@ export class EbnfCodeActionProvider implements CodeActionProvider {
 
 				// Add newlines before the new rule if needed
 				const prefix = lastLineText.length > 0 ? "\n\n" : "\n";
-				edit.insert(doc.uri, insertPos, `${prefix}${name} = ;\n`);
+				edit.insert(doc.uri, insertPos, `${prefix}${name} = ${terminator}\n`);
 
 				action.edit = edit;
 				action.diagnostics = [diag];

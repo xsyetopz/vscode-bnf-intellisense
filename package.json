@@ -86,6 +86,60 @@
 					"type": "boolean",
 					"default": false,
 					"description": "Enable ISO 14977 §6.2 spaced meta-identifiers (e.g., 'signed integer' as a single rule name)."
+				},
+				"ebnf.diagnostics.duplicateDefinitions": {
+					"type": "boolean",
+					"default": true,
+					"description": "Report duplicate rule definitions."
+				},
+				"ebnf.diagnostics.undefinedReferences": {
+					"type": "boolean",
+					"default": true,
+					"description": "Report references to undefined rules."
+				},
+				"ebnf.inlayHints.referenceCount": {
+					"type": "boolean",
+					"default": false,
+					"description": "Show reference count after rule names."
+				},
+				"ebnf.inlayHints.recursion": {
+					"type": "boolean",
+					"default": false,
+					"description": "Mark directly recursive rules."
+				},
+				"ebnf.inlayHints.unusedMarker": {
+					"type": "boolean",
+					"default": false,
+					"description": "Mark unused rules inline (in addition to diagnostic)."
+				},
+				"ebnf.style.alternativeOperator": {
+					"type": "string",
+					"enum": ["|", "/", "!"],
+					"default": "|",
+					"enumDescriptions": [
+						"Pipe: a | b",
+						"Slash: a / b",
+						"Bang: a ! b"
+					],
+					"description": "Preferred alternative (OR) operator style."
+				},
+				"ebnf.style.terminator": {
+					"type": "string",
+					"enum": [";", "."],
+					"default": ";",
+					"description": "Preferred rule terminator."
+				},
+				"ebnf.style.optionalBrackets": {
+					"type": "string",
+					"enum": ["[]", "(/ /)"],
+					"default": "[]",
+					"description": "Preferred optional group brackets."
+				},
+				"ebnf.style.repetitionBrackets": {
+					"type": "string",
+					"enum": ["{}", "(: :)"],
+					"default": "{}",
+					"description": "Preferred repetition group brackets."
 				}
 			}
 		}

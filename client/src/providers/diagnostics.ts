@@ -15,34 +15,39 @@ export function updateDiagnostics(
 ): void {
 	const { document, symbolTable } = manager.get(doc);
 	const diagnostics: Diagnostic[] = [...document.diagnostics];
+	const config = workspace.getConfiguration("ebnf");
 
-	for (const rule of document.rules) {
-		for (const ref of rule.references) {
-			if (!symbolTable.definitions.has(ref.name)) {
-				diagnostics.push({
-					message: `"${ref.name}" is not defined as a rule in this file`,
-					range: ref.range,
-					severity: DiagnosticSeverity.Warning,
-					source: DIAGNOSTIC_SOURCE,
-				});
+	if (config.get<boolean>("diagnostics.undefinedReferences", true)) {
+		for (const rule of document.rules) {
+			for (const ref of rule.references) {
+				if (!symbolTable.definitions.has(ref.name)) {
+					diagnostics.push({
+						message: `"${ref.name}" is not defined as a rule in this file`,
+						range: ref.range,
+						severity: DiagnosticSeverity.Warning,
+						source: DIAGNOSTIC_SOURCE,
+					});
+				}
 			}
 		}
 	}
 
-	for (const [name, rules] of symbolTable.definitions) {
-		if (rules.length > 1) {
-			for (const rule of rules) {
-				diagnostics.push({
-					message: `Duplicate definition of rule "${name}"`,
-					range: rule.nameRange,
-					severity: DiagnosticSeverity.Information,
-					source: DIAGNOSTIC_SOURCE,
-				});
+	if (config.get<boolean>("diagnostics.duplicateDefinitions", true)) {
+		for (const [name, rules] of symbolTable.definitions) {
+			if (rules.length > 1) {
+				for (const rule of rules) {
+					diagnostics.push({
+						message: `Duplicate definition of rule "${name}"`,
+						range: rule.nameRange,
+						severity: DiagnosticSeverity.Information,
+						source: DIAGNOSTIC_SOURCE,
+					});
+				}
 			}
 		}
 	}
 
-	const unusedEnabled = workspace.getConfiguration("ebnf").get<boolean>("diagnostics.unusedRules", true);
+	const unusedEnabled = config.get<boolean>("diagnostics.unusedRules", true);
 	if (unusedEnabled) {
 		for (const [name, rules] of symbolTable.definitions) {
 			if (!symbolTable.references.get(name)?.length) {

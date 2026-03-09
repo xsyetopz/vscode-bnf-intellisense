@@ -13,6 +13,7 @@ import { updateDiagnostics } from "./providers/diagnostics";
 import { EbnfFoldingRangeProvider } from "./providers/folding";
 import { EbnfDocumentHighlightProvider } from "./providers/highlighting";
 import { EbnfHoverProvider } from "./providers/hover";
+import { EbnfInlayHintsProvider } from "./providers/inlay-hints";
 import { EbnfReferenceProvider } from "./providers/references";
 import { EbnfRenameProvider } from "./providers/rename";
 import { EbnfSemanticTokensProvider, SEMANTIC_TOKENS_LEGEND } from "./providers/semantic-tokens";
@@ -42,6 +43,7 @@ export async function activate(context: ExtensionContext): Promise<void> {
 		languages.registerCodeActionsProvider(SELECTOR, new EbnfCodeActionProvider(), EbnfCodeActionProvider.metadata),
 		languages.registerDocumentSemanticTokensProvider(SELECTOR, new EbnfSemanticTokensProvider(manager), SEMANTIC_TOKENS_LEGEND),
 		languages.registerWorkspaceSymbolProvider(new EbnfWorkspaceSymbolProvider(workspaceIndex)),
+		languages.registerInlayHintsProvider(SELECTOR, new EbnfInlayHintsProvider(manager)),
 		diagnosticCollection,
 	);
 
