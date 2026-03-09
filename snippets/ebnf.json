@@ -26,5 +26,40 @@
 			"${1:expression} | ${2:expression}"
 		],
 		"description": "Alternation ... | ..."
+	},
+	"Grouping": {
+		"prefix": "grp",
+		"body": [
+			"( ${1:expression} )"
+		],
+		"description": "Grouping"
+	},
+	"Exception": {
+		"prefix": "exc",
+		"body": [
+			"${1:expression} - ${2:exception}"
+		],
+		"description": "Exception"
+	},
+	"Fixed repetition": {
+		"prefix": "repn",
+		"body": [
+			"${1:n} * ${2:expression}"
+		],
+		"description": "Fixed repetition"
+	},
+	"Pseudo-rule definition": {
+		"prefix": "pseudo",
+		"body": [
+			"${1:name} = ? ${2:description} ? ;"
+		],
+		"description": "Pseudo-rule definition"
+	},
+	"Special sequence": {
+		"prefix": "seq",
+		"body": [
+			"? ${1:description} ?"
+		],
+		"description": "Special sequence"
 	}
 }
