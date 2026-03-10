@@ -60,6 +60,7 @@ function isOperatorKind(kind: TokenKind): boolean {
 		kind === TokenKind.Comma ||
 		kind === TokenKind.Minus ||
 		kind === TokenKind.Asterisk ||
+		kind === TokenKind.DotDot ||
 		kind === TokenKind.ParenOpen ||
 		kind === TokenKind.ParenClose ||
 		kind === TokenKind.BracketOpen ||
