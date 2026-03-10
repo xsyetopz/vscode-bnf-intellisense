@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-03-10
+
+### Fixed
+
+- `..` range operator (e.g., `"0".."9"`) no longer tokenized as two semicolons, preventing false "Unclosed" diagnostics
+
 ## [0.1.0] - 2026-03-09
 
 ### Added
@@ -31,5 +37,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Prevented strings from spanning lines with lookahead end patterns
 - Added `#comment` include in expression patterns for defensive robustness
 
-[Unreleased]: https://github.com/xsyetopz/vscode-ebnf-intellisense/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/xsyetopz/vscode-ebnf-intellisense/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/xsyetopz/vscode-ebnf-intellisense/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/xsyetopz/vscode-ebnf-intellisense/releases/tag/v0.1.0
