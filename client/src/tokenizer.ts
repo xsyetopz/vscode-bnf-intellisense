@@ -19,6 +19,7 @@ export const enum TokenKind {
 	BracketClose,
 	BraceOpen,
 	BraceClose,
+	DotDot,
 	Whitespace,
 	Unknown,
 }
@@ -62,7 +63,6 @@ function isAlphaNumOrHyphen(ch: string): boolean {
 const OPERATOR_KINDS: Record<string, TokenKind> = {
 	"=": TokenKind.Equals,
 	";": TokenKind.Semicolon,
-	".": TokenKind.Semicolon,
 	"|": TokenKind.Pipe,
 	"!": TokenKind.Pipe,
 	"/": TokenKind.Pipe,
@@ -287,6 +287,26 @@ export function tokenize(text: string): TokenizeResult {
 				text: text.slice(tokenStart, i),
 				range: new Range(start, currentPos()),
 			});
+			continue;
+		}
+
+		if (currentChar() === ".") {
+			if (peekChar() === ".") {
+				advance();
+				advance();
+				tokens.push({
+					kind: TokenKind.DotDot,
+					text: "..",
+					range: new Range(start, currentPos()),
+				});
+			} else {
+				advance();
+				tokens.push({
+					kind: TokenKind.Semicolon,
+					text: ".",
+					range: new Range(start, currentPos()),
+				});
+			}
 			continue;
 		}
 
