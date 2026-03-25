@@ -1,22 +1,22 @@
 {
-  "name": "vscode-abnf",
+  "name": "vscode-abnf-intellisense",
   "type": "module",
   "displayName": "ABNF Syntax Highlighting and Intellisense",
   "description": "ABNF (RFC 5234) grammar support with syntax highlighting, go-to definition, hover, completions, diagnostics, formatting, and more",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "xsyetopz"
   },
   "license": "MIT",
   "private": true,
   "publisher": "xsyetopz",
-  "homepage": "https://github.com/xsyetopz/vscode-abnf",
+  "homepage": "https://github.com/xsyetopz/vscode-abnf-intellisense",
   "repository": {
     "type": "git",
-    "url": "https://github.com/xsyetopz/vscode-abnf.git"
+    "url": "https://github.com/xsyetopz/vscode-abnf-intellisense.git"
   },
   "bugs": {
-    "url": "https://github.com/xsyetopz/vscode-abnf/issues"
+    "url": "https://github.com/xsyetopz/vscode-abnf-intellisense/issues"
   },
   "keywords": [
     "ABNF",
@@ -162,12 +162,12 @@
     "vscode:prepublish": "bun run build"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.7",
-    "@types/bun": "^1.3.10",
+    "@biomejs/biome": "^2.4.8",
+    "@types/bun": "^1.3.11",
     "@types/node": "^25.5.0",
     "@types/vscode": "^1.75.0",
     "@vscode/vsce": "^3.7.1",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.2"
   },
   "trustedDependencies": [
     "@biomejs/biome",

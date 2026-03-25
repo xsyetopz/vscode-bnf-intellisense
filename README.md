@@ -42,14 +42,14 @@ ABNF (Augmented Backus-Naur Form) is a notation for defining the syntax of proto
 
 ## Installation
 
-Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=xsyetopz.vscode-abnf) or search for "ABNF" in VS Code extensions.
+Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=xsyetopz.vscode-abnf-intellisense) or search for "ABNF" in VS Code extensions.
 
 To build from source:
 
 ```bash
 bun install
 bun run package
-code --install-extension vscode-abnf-*.vsix
+code --install-extension vscode-abnf-intellisense-*.vsix
 ```
 
 ## Usage
@@ -159,8 +159,8 @@ MIT
 
 ## Links
 
-- [GitHub Repository](https://github.com/xsyetopz/vscode-abnf)
-- [Issue Tracker](https://github.com/xsyetopz/vscode-abnf/issues)
-- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=xsyetopz.vscode-abnf)
+- [GitHub Repository](https://github.com/xsyetopz/vscode-abnf-intellisense)
+- [Issue Tracker](https://github.com/xsyetopz/vscode-abnf-intellisense/issues)
+- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=xsyetopz.vscode-abnf-intellisense)
 - [RFC 5234 - ABNF Specification](https://www.rfc-editor.org/rfc/rfc5234)
 - [RFC 7405 - Case-Sensitive Strings](https://datatracker.ietf.org/doc/html/rfc7405)

@@ -12,8 +12,8 @@ This project adheres to a [Contributor Code of Conduct](CODE_OF_CONDUCT.md). By 
 2. **Clone your fork** locally:
 
    ```bash
-   git clone https://github.com/YOUR_USERNAME/vscode-abnf.git
-   cd vscode-abnf
+   git clone https://github.com/YOUR_USERNAME/vscode-abnf-intellisense.git
+   cd vscode-abnf-intellisense
    ```
 
 3. **Install dependencies**:
@@ -93,7 +93,7 @@ Examples:
 
 Before opening an issue:
 
-1. Check existing [issues](https://github.com/xsyetopz/vscode-abnf/issues)
+1. Check existing [issues](https://github.com/xsyetopz/vscode-abnf-intellisense/issues)
 2. Provide a minimal reproducible example
 3. Include VS Code version and extension version
 4. Attach screenshots or test files
@@ -125,4 +125,4 @@ By contributing, you agree that your contributions will be licensed under the pr
 
 ## Questions?
 
-Open an [issue](https://github.com/xsyetopz/vscode-abnf/issues) or start a discussion on GitHub.
+Open an [issue](https://github.com/xsyetopz/vscode-abnf-intellisense/issues) or start a discussion on GitHub.
