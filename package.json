@@ -3,7 +3,7 @@
   "type": "module",
   "displayName": "BNF-family Syntax Highlighting and Intellisense",
   "description": "BNF, EBNF, ABNF, and RBNF grammar support with syntax highlighting, navigation, diagnostics, formatting, and more",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "author": {
     "name": "xsyetopz"
   },
