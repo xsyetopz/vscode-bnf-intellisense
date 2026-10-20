@@ -1,48 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#1a1a40"/>
-      <stop offset="100%" stop-color="#2d1b69"/>
-    </linearGradient>
-    <linearGradient id="bracket" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#61dafb"/>
-      <stop offset="100%" stop-color="#7c6cf0"/>
-    </linearGradient>
-    <linearGradient id="slash" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#7c6cf0"/>
-      <stop offset="100%" stop-color="#c084fc"/>
-    </linearGradient>
-  </defs>
+  <!-- Background: flat dark ink, matches galleryBanner color #0d1b2a -->
+  <rect width="256" height="256" rx="48" ry="48" fill="#0d1b2a"/>
 
-  <!-- Background -->
-  <rect x="0" y="0" width="256" height="256" rx="48" ry="48" fill="url(#bg)"/>
+  <!-- Left angle bracket < : nonterminal (entity/type teal) -->
+  <polyline points="88,70 36,128 88,186" fill="none" stroke="#4ec9b0" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
 
-  <!-- Left angle bracket < -->
-  <polyline
-    points="100,68 42,128 100,188"
-    fill="none"
-    stroke="url(#bracket)"
-    stroke-width="22"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  />
+  <!-- Right angle bracket > : nonterminal (entity/type teal) -->
+  <polyline points="168,70 220,128 168,186" fill="none" stroke="#4ec9b0" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
 
-  <!-- Right angle bracket > -->
-  <polyline
-    points="156,68 214,128 156,188"
-    fill="none"
-    stroke="url(#bracket)"
-    stroke-width="22"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  />
-
-  <!-- Forward slash / (ABNF alternation) -->
-  <line
-    x1="144" y1="78"
-    x2="112" y2="178"
-    stroke="url(#slash)"
-    stroke-width="18"
-    stroke-linecap="round"
-  />
+  <!-- Slash / : alternation operator shared by all four notations (keyword/operator magenta) -->
+  <line x1="143" y1="76" x2="113" y2="180" stroke="#c586c0" stroke-width="22" stroke-linecap="round"/>
 </svg>

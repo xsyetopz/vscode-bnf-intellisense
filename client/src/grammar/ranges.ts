@@ -1,4 +1,5 @@
 import { Range } from "vscode";
+import type { LineIndex } from "./line-index.ts";
 
 /**
  * Single source line with its document offset.
@@ -23,35 +24,21 @@ export function makeSingleLineRange(
 }
 
 /**
- * Converts absolute document offsets into a VS Code range.
+ * Converts offsets into a VS Code range using a prebuilt line index.
  */
-export function rangeFromOffsets(
-  text: string,
+export function rangeFromLineIndex(
+  lines: LineIndex,
   start: number,
   end: number,
 ): Range {
-  let line = 0;
-  let lineStart = 0;
-  let i = 0;
-  while (i < start) {
-    if (text.charAt(i) === "\n") {
-      line++;
-      lineStart = i + 1;
-    }
-    i++;
-  }
-
-  let endLine = line;
-  let endLineStart = lineStart;
-  while (i < end) {
-    if (text.charAt(i) === "\n") {
-      endLine++;
-      endLineStart = i + 1;
-    }
-    i++;
-  }
-
-  return new Range(line, start - lineStart, endLine, end - endLineStart);
+  const startLine = lines.lineAt(start);
+  const endLine = lines.lineAt(end);
+  return new Range(
+    startLine,
+    start - (lines.starts[startLine] ?? 0),
+    endLine,
+    end - (lines.starts[endLine] ?? 0),
+  );
 }
 
 /**

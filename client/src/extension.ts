@@ -5,13 +5,19 @@ import {
   type TextDocumentContentProvider,
   workspace,
 } from "vscode";
+import { registerGrammarCommands } from "./grammar/commands/index.ts";
 import {
   BNF_CORE_RULES_SCHEME,
   renderCoreRulesDocument,
 } from "./grammar/core-rules-document.ts";
-import { updateGrammarDiagnostics } from "./grammar/diagnostics.ts";
+import {
+  refreshGrammarDiagnostics,
+  updateGrammarDiagnostics,
+} from "./grammar/diagnostics.ts";
 import { isGrammarLanguage, languageIdsSelector } from "./grammar/grammar.ts";
 import { registerGrammarProviders } from "./grammar/providers/index.ts";
+import { registerRailroadPreview } from "./grammar/railroad/index.ts";
+import { forgetDocumentSuggestions } from "./grammar/suggestion-store.ts";
 import { GrammarWorkspace } from "./grammar/workspace.ts";
 
 const SELECTOR = languageIdsSelector();
@@ -23,7 +29,11 @@ export async function activateGrammarExtension(
   context: ExtensionContext,
 ): Promise<void> {
   const grammarWorkspace = new GrammarWorkspace();
-  await grammarWorkspace.initialize();
+  // Indexing runs in the background: providers answer from what is indexed so
+  // far and results fill in as files are read.
+  void grammarWorkspace.initialize().catch((error: unknown) => {
+    console.error("BNF workspace indexing failed:", error);
+  });
   const diagnosticCollection = languages.createDiagnosticCollection("bnf");
 
   context.subscriptions.push(
@@ -37,10 +47,13 @@ export async function activateGrammarExtension(
       grammarWorkspace,
       diagnosticCollection,
     ),
+    ...registerGrammarCommands(),
+    ...registerRailroadPreview(grammarWorkspace),
   );
 
   function updateDocumentDiagnostics(doc: TextDocument): void {
     if (isGrammarLanguage(doc.languageId)) {
+      grammarWorkspace.syncOpenDocument(doc);
       updateGrammarDiagnostics(doc, grammarWorkspace, diagnosticCollection);
     }
   }
@@ -50,14 +63,34 @@ export async function activateGrammarExtension(
       updateDocumentDiagnostics(doc);
     }),
     workspace.onDidChangeTextDocument((event) => {
+      if (
+        event.contentChanges.length === 0 ||
+        !isGrammarLanguage(event.document.languageId)
+      ) {
+        return;
+      }
       grammarWorkspace.scheduleReparse(
         event.document,
         updateDocumentDiagnostics,
       );
     }),
+    workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration("bnf")) {
+        refreshGrammarDiagnostics(
+          workspace.textDocuments,
+          grammarWorkspace,
+          diagnosticCollection,
+        );
+      }
+      if (event.affectsConfiguration("files.exclude")) {
+        grammarWorkspace.refreshExclusions().catch((error: unknown) => {
+          console.error("BNF workspace indexing failed:", error);
+        });
+      }
+    }),
     workspace.onDidCloseTextDocument((doc) => {
       const uri = doc.uri.toString();
-      grammarWorkspace.removeDocument(uri);
+      forgetDocumentSuggestions(uri);
       diagnosticCollection.delete(doc.uri);
     }),
   );
@@ -68,10 +101,10 @@ export async function activateGrammarExtension(
 }
 
 /**
- * Disposes extension-level resources owned outside the VS Code subscription list.
+ * Releases resources not tracked by the extension subscriptions.
  */
 export function deactivateGrammarExtension(): void {
-  // VS Code disposes extension subscriptions.
+  // Nothing to release: VS Code disposes the subscriptions.
 }
 
 const CORE_RULES_DOCUMENT_PROVIDER: TextDocumentContentProvider = {

@@ -1,5 +1,0 @@
-#!/bin/sh
-set -eu
-
-echo "pre-commit: checking formatting and lint"
-bunx biome check . --max-diagnostics 16384

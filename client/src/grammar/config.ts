@@ -1,5 +1,13 @@
-import { workspace } from "vscode";
+import { type ConfigurationScope, workspace } from "vscode";
 
-export function readGrammarConfig<T>(key: string, fallback: T): T {
-  return workspace.getConfiguration("bnf").get<T>(key, fallback);
+/**
+ * Reads one `bnf.*` setting. Pass the document's `{ uri, languageId }` as
+ * `scope` so folder and `"[language]"` overrides apply.
+ */
+export function readGrammarConfig<T>(
+  key: string,
+  fallback: T,
+  scope?: ConfigurationScope,
+): T {
+  return workspace.getConfiguration("bnf", scope).get<T>(key, fallback);
 }

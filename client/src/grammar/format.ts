@@ -2,7 +2,15 @@ import type {
   AbnfAlternativeIndent,
   AbnfBreakAlternatives,
 } from "../abnf/format.ts";
-import type { GrammarDialect } from "./dialects.ts";
+import {
+  lexProductionGrammar,
+  type Production,
+  type ProductionDialect,
+  productionHasErrors,
+  type ScanResult,
+  type ScanToken,
+  scanProductionGrammar,
+} from "./scanner.ts";
 
 /**
  * Shared formatting options for grammar documents.
@@ -28,186 +36,134 @@ export interface GenericGrammarFormatterConfig
   spaceBeforeInlineComment: number;
 }
 
-interface ParsedFormatLine {
-  line: string;
-  lhs?: string;
-  op?: string;
-  body?: string;
-  comment?: string | undefined;
+interface Item {
+  kind: "rule" | "blank" | "other";
+  lines: string[];
 }
 
-interface AlternativeScanState {
-  quote: string | undefined;
-  escaped: boolean;
-  angleDepth: number;
-  parenDepth: number;
-  bracketDepth: number;
-  braceDepth: number;
+interface Layout {
+  nameWidth: number;
+  numberWidth: number;
 }
 
-const RULE_RE =
-  /^(\s*(?:\[[^\]]+\]\s*)?(?:<[^<>\r\n]+>|[A-Za-z_][A-Za-z0-9_.:-]*)\s*)(::=)(\s*)(.*)$/;
-const EBNF_PRODUCTION_PREFIX_RE = /^\s*\[[^\]]+\]\s*/;
-const CRLF_RE = /\r\n/g;
-const CR_RE = /\r/g;
-const TRAILING_SPACE_RE = /[ \t]+$/gm;
-const TRAILING_BLANK_LINES_RE = /\n+$/;
+const EOL_RE = /\r\n|\n|\r/;
+const LINE_BREAK_RE = /[ \t]*(?:\r\n|\n|\r)[ \t]*/g;
+const OPERATOR = "::=";
 
-function parseFormatLine(line: string): ParsedFormatLine {
-  const match = line.match(RULE_RE);
-  if (!match) {
-    return { line };
+function detectEol(text: string): string {
+  return EOL_RE.exec(text)?.[0] ?? "\n";
+}
+
+function normalizeBreaks(text: string): string {
+  return text.replace(LINE_BREAK_RE, " ");
+}
+
+function productionStartLine(production: Production): number {
+  return (production.numberToken ?? production.nameToken).line;
+}
+
+function productionEndLine(production: Production): number {
+  const last = production.bodyTokens[production.bodyTokens.length - 1];
+  let end = (last ?? production.assignToken).endLine;
+  for (const comment of production.trailingComments) {
+    end = Math.max(end, comment.endLine);
   }
-  const body = match[4] ?? "";
-  const inlineComment = splitInlineComment(body);
+  return end;
+}
+
+/**
+ * Lines that begin inside a multi-line comment. They are never reformatted.
+ */
+function commentInteriorLines(scan: ScanResult): Set<number> {
+  const interior = new Set<number>();
+  for (const token of scan.tokens) {
+    if (token.kind === "comment") {
+      for (let line = token.line + 1; line <= token.endLine; line++) {
+        interior.add(line);
+      }
+    }
+  }
+  return interior;
+}
+
+function computeLayout(
+  productions: readonly Production[],
+  config: GenericGrammarFormatterConfig,
+): Layout {
+  let nameWidth = 0;
+  let numberWidth = 0;
+  for (const production of productions) {
+    nameWidth = Math.max(nameWidth, production.nameToken.text.length);
+    numberWidth = Math.max(
+      numberWidth,
+      production.numberToken?.text.length ?? 0,
+    );
+  }
   return {
-    line,
-    lhs: match[1] ?? "",
-    op: match[2] ?? "::=",
-    body: inlineComment.body,
-    comment: inlineComment.comment,
+    nameWidth: config.alignEquals ? nameWidth : 0,
+    numberWidth:
+      config.alignEquals && config.alignProductionNumbers ? numberWidth : 0,
   };
 }
 
-function alignedWidth(
-  lines: ParsedFormatLine[],
-  config: GenericGrammarFormatterConfig,
-): number {
-  if (!config.alignEquals) {
-    return 0;
+function headText(production: Production, layout: Layout): string {
+  const number = production.numberToken?.text;
+  let prefix = "";
+  if (number) {
+    prefix = `${number.padEnd(layout.numberWidth)} `;
+  } else if (layout.numberWidth > 0) {
+    prefix = " ".repeat(layout.numberWidth + 1);
   }
-  return Math.max(0, ...lines.map((line) => line.lhs?.trimEnd().length ?? 0));
+  return `${prefix}${production.nameToken.text.padEnd(layout.nameWidth)}`;
 }
 
-function alignableHead(
-  lhs: string,
-  dialect: Exclude<GrammarDialect, "abnf">,
+function continuationPrefix(
+  head: string,
   config: GenericGrammarFormatterConfig,
 ): string {
-  if (dialect !== "ebnf" || config.alignProductionNumbers) {
-    return lhs;
+  if (config.alternativeIndent === "indent") {
+    return " ".repeat(Math.max(1, Math.floor(config.continuationIndent) || 1));
   }
-  return lhs.replace(EBNF_PRODUCTION_PREFIX_RE, "");
+  return " ".repeat(head.length + OPERATOR.length + 2);
 }
 
-function pushBlankLines(out: string[], count: number): void {
-  for (let i = 0; i < count; i++) {
-    if (out[out.length - 1] !== "") {
-      out.push("");
-    }
-  }
+function joinTokens(text: string, tokens: readonly ScanToken[]): string {
+  const first = tokens[0];
+  const last = tokens[tokens.length - 1];
+  return first && last
+    ? normalizeBreaks(text.slice(first.start, last.end))
+    : "";
 }
 
-function initialAlternativeScanState(): AlternativeScanState {
-  return {
-    quote: undefined,
-    escaped: false,
-    angleDepth: 0,
-    parenDepth: 0,
-    bracketDepth: 0,
-    braceDepth: 0,
-  };
-}
-
-function isInsideStructure(state: AlternativeScanState): boolean {
-  return (
-    state.angleDepth > 0 ||
-    state.parenDepth > 0 ||
-    state.bracketDepth > 0 ||
-    state.braceDepth > 0
-  );
-}
-
-function scanQuotedCharacter(state: AlternativeScanState, ch: string): boolean {
-  if (!state.quote) {
-    return false;
-  }
-  if (state.escaped) {
-    state.escaped = false;
-    return true;
-  }
-  if (ch === "\\") {
-    state.escaped = true;
-    return true;
-  }
-  if (ch === state.quote) {
-    state.quote = undefined;
-  }
-  return true;
-}
-
-function adjustDepth(current: number, delta: number): number {
-  return Math.max(0, current + delta);
-}
-
-function scanStructuralCharacter(
-  state: AlternativeScanState,
-  ch: string,
-): void {
-  if (ch === '"' || ch === "'") {
-    state.quote = ch;
-    return;
-  }
-  if (ch === "<") {
-    state.angleDepth++;
-    return;
-  }
-  if (ch === ">") {
-    state.angleDepth = adjustDepth(state.angleDepth, -1);
-    return;
-  }
-  if (state.angleDepth > 0) {
-    return;
-  }
-  if (ch === "(") {
-    state.parenDepth++;
-  } else if (ch === ")") {
-    state.parenDepth = adjustDepth(state.parenDepth, -1);
-  } else if (ch === "[") {
-    state.bracketDepth++;
-  } else if (ch === "]") {
-    state.bracketDepth = adjustDepth(state.bracketDepth, -1);
-  } else if (ch === "{") {
-    state.braceDepth++;
-  } else if (ch === "}") {
-    state.braceDepth = adjustDepth(state.braceDepth, -1);
-  }
-}
-
-function scanAlternativeCharacter(
-  state: AlternativeScanState,
-  ch: string,
-): void {
-  if (!scanQuotedCharacter(state, ch)) {
-    scanStructuralCharacter(state, ch);
-  }
-}
-
-function topLevelAlternatives(body: string): string[] {
+/**
+ * Splits a body into top-level alternatives. Delimiters inside character
+ * classes, strings, and angle names are single tokens, so only real groups
+ * change the depth.
+ */
+function topLevelAlternatives(text: string, production: Production): string[] {
   const alternatives: string[] = [];
-  const state = initialAlternativeScanState();
-  let start = 0;
-
-  for (let i = 0; i < body.length; i++) {
-    const ch = body[i] ?? "";
-    if (ch === "|" && !state.quote && !isInsideStructure(state)) {
-      alternatives.push(body.slice(start, i).trim());
-      start = i + 1;
+  let current: ScanToken[] = [];
+  let depth = 0;
+  for (const token of production.bodyTokens) {
+    if (token.kind === "group") {
+      depth =
+        token.text === "(" || token.text === "[" || token.text === "{"
+          ? depth + 1
+          : Math.max(0, depth - 1);
+    } else if (token.kind === "alternative" && depth === 0) {
+      alternatives.push(joinTokens(text, current));
+      current = [];
       continue;
     }
-    scanAlternativeCharacter(state, ch);
+    current.push(token);
   }
-
-  if (alternatives.length === 0) {
-    return [body.trim()];
-  }
-  alternatives.push(body.slice(start).trim());
+  alternatives.push(joinTokens(text, current));
   return alternatives;
 }
 
 function shouldBreakAlternatives(
-  line: string,
-  alternatives: string[],
+  rendered: string,
+  alternatives: readonly string[],
   config: GenericGrammarFormatterConfig,
 ): boolean {
   if (alternatives.length <= 1) {
@@ -219,160 +175,259 @@ function shouldBreakAlternatives(
   if (config.breakAlternatives === "never" || config.maxLineLength <= 0) {
     return false;
   }
-  return line.length > config.maxLineLength;
+  return rendered.length > config.maxLineLength;
 }
 
-function continuationPrefix(
-  lhs: string,
-  op: string,
+function trailingComment(
+  text: string,
+  production: Production,
   config: GenericGrammarFormatterConfig,
 ): string {
-  if (config.alternativeIndent === "indent") {
-    return `${" ".repeat(Math.max(0, lhs.trimEnd().length))}${" ".repeat(
-      Math.max(1, Math.floor(config.continuationIndent)),
-    )}`;
+  const first = production.trailingComments[0];
+  const last =
+    production.trailingComments[production.trailingComments.length - 1];
+  if (!(first && last)) {
+    return "";
   }
-  return " ".repeat(lhs.length + op.length + 2);
+  const spaces = " ".repeat(Math.max(0, config.spaceBeforeInlineComment));
+  return `${spaces}${text.slice(first.start, last.end)}`;
 }
 
-function splitCommentBody(
-  body: string,
-  index: number,
-): { body: string; comment: string } {
-  return {
-    body: body.slice(0, index).trim(),
-    comment: body.slice(index).trim(),
-  };
+function isSimple(production: Production): boolean {
+  return (
+    production.innerComments.length === 0 &&
+    production.trailingComments.every(
+      (comment) => comment.line === comment.endLine,
+    )
+  );
 }
 
-function quotedState(
-  quote: string | undefined,
-  escaped: boolean,
-  ch: string,
-): { quote: string | undefined; escaped: boolean; handled: boolean } {
-  if (!quote) {
-    return { quote, escaped, handled: false };
-  }
-  if (escaped) {
-    return { quote, escaped: false, handled: true };
-  }
-  if (ch === "\\") {
-    return { quote, escaped: true, handled: true };
-  }
-  return {
-    quote: ch === quote ? undefined : quote,
-    escaped: false,
-    handled: true,
-  };
-}
-
-function splitInlineComment(body: string): { body: string; comment?: string } {
-  let quote: string | undefined;
-  let escaped = false;
-  for (let i = 0; i < body.length; i++) {
-    const ch = body[i] ?? "";
-    const state = quotedState(quote, escaped, ch);
-    quote = state.quote;
-    escaped = state.escaped;
-    if (state.handled) {
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      quote = ch;
-      continue;
-    }
-    if (ch === ";" || (ch === "/" && body[i + 1] === "*")) {
-      return splitCommentBody(body, i);
-    }
-  }
-  return { body: body.trim() };
-}
-
-function formatRuleLine(
-  line: ParsedFormatLine,
-  dialect: Exclude<GrammarDialect, "abnf">,
-  width: number,
+function formatSimple(
+  scan: ScanResult,
+  production: Production,
+  head: string,
   config: GenericGrammarFormatterConfig,
 ): string[] {
-  const rawLhs = line.lhs ?? "";
-  const head = alignableHead(rawLhs, dialect, config);
-  const lhs = config.alignEquals
-    ? rawLhs.trimEnd().padEnd(width + (rawLhs.length - head.length))
-    : rawLhs.trimEnd();
-  const op = line.op ?? "::=";
-  const body = (line.body ?? "").trim();
-  const comment =
-    line.comment && line.comment.length > 0
-      ? `${" ".repeat(config.spaceBeforeInlineComment)}${line.comment}`
-      : "";
-  const rendered = `${lhs} ${op}${body.length > 0 ? ` ${body}` : ""}${comment}`;
-  const alternatives = topLevelAlternatives(body);
+  const alternatives = topLevelAlternatives(scan.text, production);
+  const body = joinTokens(scan.text, production.bodyTokens);
+  const comment = trailingComment(scan.text, production, config);
+  const rendered = `${head} ${OPERATOR}${body ? ` ${body}` : ""}${comment}`;
   if (!shouldBreakAlternatives(rendered, alternatives, config)) {
     return [rendered];
   }
-  const prefix = continuationPrefix(lhs, op, config);
+  const prefix = continuationPrefix(head, config);
+  const [first = "", ...rest] = alternatives;
   const lines = [
-    `${lhs} ${op} ${alternatives[0] ?? ""}`,
-    ...alternatives.slice(1).map((alternative) => `${prefix}| ${alternative}`),
+    first ? `${head} ${OPERATOR} ${first}` : `${head} ${OPERATOR}`,
+    ...rest.map((alternative) =>
+      alternative ? `${prefix}| ${alternative}` : `${prefix}|`,
+    ),
   ];
-  if (comment.length > 0) {
-    lines[lines.length - 1] = `${lines[lines.length - 1]}${comment}`;
-  }
+  lines[lines.length - 1] = `${lines[lines.length - 1]}${comment}`;
   return lines;
 }
 
-function renderLines(
-  lines: ParsedFormatLine[],
-  dialect: Exclude<GrammarDialect, "abnf">,
+function formatWithComments(
+  lines: readonly string[],
+  production: Production,
+  head: string,
+  interior: ReadonlySet<number>,
   config: GenericGrammarFormatterConfig,
 ): string[] {
-  const width = config.alignEquals
-    ? Math.max(
-        0,
-        ...lines.map(
-          (line) =>
-            alignableHead(line.lhs?.trimEnd() ?? "", dialect, config).length,
-        ),
-      )
-    : alignedWidth(lines, config);
-  const out: string[] = [];
-  let previousWasRule = false;
-  for (const line of lines) {
-    if (!line.lhs) {
-      out.push(config.preserveCommentSpacing ? line.line : line.line.trimEnd());
-      previousWasRule = false;
+  const startLine = productionStartLine(production);
+  const rest = (lines[startLine] ?? "")
+    .slice(production.assignToken.endColumn)
+    .trim();
+  const out = [rest ? `${head} ${OPERATOR} ${rest}` : `${head} ${OPERATOR}`];
+  const prefix = continuationPrefix(head, config);
+  for (
+    let line = startLine + 1;
+    line <= productionEndLine(production);
+    line++
+  ) {
+    const raw = lines[line] ?? "";
+    if (interior.has(line)) {
+      out.push(config.preserveCommentSpacing ? raw : raw.trimEnd());
       continue;
     }
-    if (previousWasRule) {
-      pushBlankLines(out, config.blankLinesBetweenRules);
+    const content = raw.trim();
+    if (content === "") {
+      out.push("");
+    } else if (content.startsWith("|")) {
+      out.push(`${prefix}${content}`);
+    } else {
+      out.push(`${prefix}  ${content}`);
     }
-    out.push(...formatRuleLine(line, dialect, width, config));
-    previousWasRule = true;
   }
   return out;
 }
 
+function tokenSignature(text: string, dialect: ProductionDialect): string {
+  return lexProductionGrammar(text, dialect)
+    .map((token) => `${token.kind}\u0000${token.text}`)
+    .join("\u0001");
+}
+
 /**
- * Formats BNF, EBNF, and RBNF production grammars.
+ * Productions whose comments or tokens cannot be re-laid-out safely.
+ */
+function leadingCommentProductions(
+  scan: ScanResult,
+  byStart: ReadonlyMap<number, Production>,
+): Set<Production> {
+  const marked = new Set<Production>();
+  for (const token of scan.tokens) {
+    if (token.kind !== "comment") {
+      continue;
+    }
+    const production = byStart.get(token.endLine);
+    if (production && token.end <= production.startOffset) {
+      marked.add(production);
+    }
+  }
+  return marked;
+}
+
+function formatProduction(
+  scan: ScanResult,
+  lines: readonly string[],
+  production: Production,
+  layout: Layout,
+  interior: ReadonlySet<number>,
+  config: GenericGrammarFormatterConfig,
+): string[] | undefined {
+  const head = headText(production, layout);
+  const formatted = isSimple(production)
+    ? formatSimple(scan, production, head, config)
+    : formatWithComments(lines, production, head, interior, config);
+  // Safety net: the token stream must survive formatting unchanged.
+  const original = lines
+    .slice(productionStartLine(production), productionEndLine(production) + 1)
+    .join("\n");
+  return tokenSignature(formatted.join("\n"), scan.dialect) ===
+    tokenSignature(original, scan.dialect)
+    ? formatted
+    : undefined;
+}
+
+/**
+ * Start of a chunk of non-blank lines that ends in a rule, such as a comment
+ * attached to the rule below it.
+ */
+function startsRuleGroup(items: readonly Item[], index: number): boolean {
+  let cursor = index;
+  while (items[cursor]?.kind === "other") {
+    cursor++;
+  }
+  return items[cursor]?.kind === "rule";
+}
+
+function normalizeRuleGaps(items: readonly Item[], blankLines: number): Item[] {
+  const out: Item[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i] as Item;
+    out.push(item);
+    if (item.kind !== "rule") {
+      continue;
+    }
+    let next = i + 1;
+    while (items[next]?.kind === "blank") {
+      next++;
+    }
+    if (next < items.length && startsRuleGroup(items, next)) {
+      for (let n = 0; n < blankLines; n++) {
+        out.push({ kind: "blank", lines: [""] });
+      }
+      i = next - 1;
+    }
+  }
+  return out;
+}
+
+function buildItems(
+  scan: ScanResult,
+  lines: readonly string[],
+  config: GenericGrammarFormatterConfig,
+): Item[] {
+  const interior = commentInteriorLines(scan);
+  const byStart = new Map<number, Production>();
+  for (const production of scan.productions) {
+    byStart.set(productionStartLine(production), production);
+  }
+  const leading = leadingCommentProductions(scan, byStart);
+  const verbatim = (production: Production) =>
+    leading.has(production) || productionHasErrors(production);
+  const layout = computeLayout(
+    scan.productions.filter((production) => !verbatim(production)),
+    config,
+  );
+  const items: Item[] = [];
+  let line = 0;
+  while (line < lines.length) {
+    const production = byStart.get(line);
+    if (production) {
+      const end = productionEndLine(production);
+      const original = lines.slice(line, end + 1);
+      items.push({
+        kind: "rule",
+        lines: verbatim(production)
+          ? original
+          : (formatProduction(
+              scan,
+              lines,
+              production,
+              layout,
+              interior,
+              config,
+            ) ?? original),
+      });
+      line = end + 1;
+      continue;
+    }
+    const raw = lines[line] ?? "";
+    if (interior.has(line)) {
+      items.push({
+        kind: "other",
+        lines: [config.preserveCommentSpacing ? raw : raw.trimEnd()],
+      });
+    } else if (raw.trim() === "") {
+      items.push({ kind: "blank", lines: [""] });
+    } else {
+      items.push({ kind: "other", lines: [raw.trimEnd()] });
+    }
+    line++;
+  }
+  return items;
+}
+
+/**
+ * Formats BNF, EBNF, and RBNF production grammars. The token stream is never
+ * changed: only whitespace between tokens and between lines is touched.
+ * Productions with unbalanced delimiters or unterminated tokens are copied
+ * verbatim. The input's line-ending style is kept.
  */
 export function formatProductionGrammarDocument(
   text: string,
-  dialect: Exclude<GrammarDialect, "abnf">,
+  dialect: ProductionDialect,
   config: GenericGrammarFormatterConfig,
 ): string {
-  const normalized = text.replace(CRLF_RE, "\n").replace(CR_RE, "\n");
-  let result = renderLines(
-    normalized.split("\n").map(parseFormatLine),
-    dialect,
-    config,
-  )
-    .join("\n")
-    .replace(TRAILING_SPACE_RE, "");
+  const eol = detectEol(text);
+  const scan = scanProductionGrammar(text, dialect);
+  const lines = text.split(EOL_RE);
+  const blankLines = Math.max(
+    0,
+    Math.floor(config.blankLinesBetweenRules) || 0,
+  );
+  const items = normalizeRuleGaps(buildItems(scan, lines, config), blankLines);
+  const out = items.flatMap((item) => item.lines);
   if (config.trimTrailingBlankLines) {
-    result = result.replace(TRAILING_BLANK_LINES_RE, "");
+    while (out.length > 0 && out[out.length - 1]?.trim() === "") {
+      out.pop();
+    }
   }
-  if (config.insertFinalNewline && !result.endsWith("\n")) {
-    result += "\n";
+  let result = out.join(eol);
+  if (config.insertFinalNewline && result.length > 0 && !result.endsWith(eol)) {
+    result += eol;
   }
   return result;
 }

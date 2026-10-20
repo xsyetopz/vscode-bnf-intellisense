@@ -13,7 +13,7 @@
       "match": ";[^\\r\\n]*"
     },
     "rule-definition": {
-      "match": "^\\s*(<[^<>\\r\\n]+>|[A-Za-z_][A-Za-z0-9_.:-]*)(\\s*)(::=)",
+      "match": "^\\s*(<[^<>\\r\\n]+>)(\\s*)(::=)",
       "captures": {
         "1": { "name": "entity.name.function.rule.rbnf" },
         "3": { "name": "keyword.operator.assignment.rbnf" }
@@ -22,45 +22,41 @@
     "expression": {
       "patterns": [
         { "include": "#comment" },
-        { "include": "#repetition-prefix" },
-        { "include": "#repetition-range" },
         { "include": "#double-string" },
         { "include": "#single-string" },
         { "include": "#alternation" },
-        { "include": "#suffix-repetition" },
+        { "include": "#ellipsis" },
         { "include": "#group-delimiter" },
         { "include": "#identifier" }
       ]
-    },
-    "repetition-prefix": {
-      "name": "constant.numeric.repetition.rbnf",
-      "match": "\\b\\d+(?=\\*)"
-    },
-    "repetition-range": {
-      "name": "keyword.operator.repetition.rbnf",
-      "match": "\\d*\\*\\d*"
     },
     "double-string": {
       "name": "string.quoted.double.rbnf",
       "begin": "(\\\")",
       "beginCaptures": { "1": { "name": "punctuation.definition.string.begin.rbnf" } },
       "end": "(\\\")|(?=\\n)",
-      "endCaptures": { "1": { "name": "punctuation.definition.string.end.rbnf" } }
+      "endCaptures": { "1": { "name": "punctuation.definition.string.end.rbnf" } },
+      "patterns": [ { "include": "#string-escape" } ]
     },
     "single-string": {
       "name": "string.quoted.single.rbnf",
       "begin": "(')",
       "beginCaptures": { "1": { "name": "punctuation.definition.string.begin.rbnf" } },
       "end": "(')|(?=\\n)",
-      "endCaptures": { "1": { "name": "punctuation.definition.string.end.rbnf" } }
+      "endCaptures": { "1": { "name": "punctuation.definition.string.end.rbnf" } },
+      "patterns": [ { "include": "#string-escape" } ]
+    },
+    "string-escape": {
+      "name": "constant.character.escape.rbnf",
+      "match": "\\\\(?:x[0-9A-Fa-f]{2}|.)"
     },
     "alternation": {
       "name": "keyword.operator.alternation.rbnf",
       "match": "\\|"
     },
-    "suffix-repetition": {
-      "name": "keyword.operator.repetition.rbnf",
-      "match": "[?+*]"
+    "ellipsis": {
+      "name": "keyword.operator.repetition.ellipsis.rbnf",
+      "match": "\\.\\.\\."
     },
     "group-delimiter": {
       "name": "punctuation.definition.group.rbnf",
@@ -68,7 +64,7 @@
     },
     "identifier": {
       "name": "variable.other.rule.rbnf",
-      "match": "<[^<>\\r\\n]+>|[A-Za-z_][A-Za-z0-9_.:-]*"
+      "match": "<[^<>\\r\\n]+>|[A-Za-z_][A-Za-z0-9_.:-]*(?<![.:-])"
     }
   }
 }

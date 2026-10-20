@@ -1,6 +1,11 @@
-import { tokenize as tokenizeAbnf } from "../abnf/tokenizer.ts";
+import { tokenizeDocument as tokenizeAbnf } from "../abnf/tokenizer.ts";
 import { AbnfTokenKind } from "../abnf/types.ts";
 import type { GrammarDialect } from "./dialects.ts";
+import {
+  type ProductionDialect,
+  type ScanToken,
+  scanProductionGrammar,
+} from "./scanner.ts";
 
 /**
  * Token categories used by cross-dialect grammar services.
@@ -17,6 +22,7 @@ export type GrammarTokenKind =
   | "repeat"
   | "charCode"
   | "charClass"
+  | "operator"
   | "unknown";
 
 /**
@@ -29,20 +35,7 @@ export interface GrammarToken {
   column: number;
 }
 
-const PRODUCTION_RE =
-  /^\s*(?:\[[^\]\r\n]+\]\s*)?(<[^<>\r\n]+>|[A-Za-z_][A-Za-z0-9_.:-]*)\s*(::=)/;
-const EBNF_PRODUCTION_NUMBER_RE = /^\s*(\[[^\]\r\n]+\])(?=\s*[A-Za-z_])/;
-const ANGLE_RE = /<[^<>\r\n]+>/g;
-const BARE_RE = /\b[A-Za-z_][A-Za-z0-9_.:-]*\b/g;
-const LITERAL_RE = /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g;
-const EBNF_CHAR_CLASS_RE = /\[(?:\^)?[^\]\r\n]*\]/g;
-const EBNF_CHAR_CODE_RE = /#x[0-9A-Fa-f]+/g;
 const LINE_SPLIT_RE = /\r\n|\n|\r/;
-
-interface CommentRange {
-  start: number;
-  end: number;
-}
 
 /**
  * Tokenizes a document according to its grammar dialect.
@@ -101,317 +94,84 @@ function abnfKind(kind: AbnfTokenKind): GrammarTokenKind | undefined {
 
 function tokenizeProductionGrammar(
   text: string,
-  dialect: Exclude<GrammarDialect, "abnf">,
+  dialect: ProductionDialect,
 ): GrammarToken[] {
-  const lines = text.split(LINE_SPLIT_RE);
-  const lineStarts = lineStartOffsets(text, lines);
-  const comments = productionCommentRanges(text, dialect);
-  return lines
-    .flatMap((line, lineNumber) =>
-      tokenizeProductionLine(
-        line,
-        lineNumber,
-        dialect,
-        lineStarts[lineNumber] ?? 0,
-        comments,
-      ),
-    )
-    .sort((a, b) => a.line - b.line || a.column - b.column);
-}
-
-function lineStartOffsets(text: string, lines: string[]): number[] {
-  const starts: number[] = [];
-  let offset = 0;
-  for (const line of lines) {
-    starts.push(offset);
-    offset += line.length;
-    if (text.startsWith("\r\n", offset)) {
-      offset += 2;
-    } else if (text[offset] === "\r" || text[offset] === "\n") {
-      offset++;
-    }
+  const scan = scanProductionGrammar(text, dialect);
+  const headNames = new Set<ScanToken>();
+  for (const production of scan.productions) {
+    headNames.add(production.nameToken);
   }
-  return starts;
-}
-
-function productionCommentRanges(
-  text: string,
-  dialect: Exclude<GrammarDialect, "abnf">,
-): CommentRange[] {
-  const ranges: CommentRange[] = [];
-  let quote: string | undefined;
-  let i = 0;
-  while (i < text.length) {
-    const ch = text[i];
-    if (quote) {
-      if (ch === "\r" || ch === "\n") {
-        quote = undefined;
-        i++;
-        continue;
-      }
-      if (ch === "\\") {
-        i++;
-        if (text[i] !== "\r" && text[i] !== "\n") {
-          i++;
-        }
-      } else {
-        if (ch === quote) {
-          quote = undefined;
-        }
-        i++;
-      }
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      quote = ch;
-      i++;
-      continue;
-    }
-    if (dialect === "ebnf" && ch === "/" && text[i + 1] === "*") {
-      const start = i;
-      const close = text.indexOf("*/", i + 2);
-      const end = close < 0 ? text.length : close + 2;
-      ranges.push({ start, end });
-      i = end;
-      continue;
-    }
-    if (dialect !== "ebnf" && ch === ";") {
-      const start = i;
-      i++;
-      while (i < text.length && text[i] !== "\r" && text[i] !== "\n") {
-        i++;
-      }
-      ranges.push({ start, end: i });
-      continue;
-    }
-    i++;
-  }
-  return ranges;
-}
-
-function tokenizeProductionLine(
-  line: string,
-  lineNumber: number,
-  dialect: Exclude<GrammarDialect, "abnf">,
-  lineStart: number,
-  comments: readonly CommentRange[],
-): GrammarToken[] {
-  const commentLine = maskCommentRanges(line, lineStart, comments);
-  const production = commentLine.match(PRODUCTION_RE);
-  const literalLine = commentLine.replace(LITERAL_RE, maskMatch);
-  const referenceLine = maskReferenceExclusions(literalLine, dialect);
-  return [
-    ...commentTokens(line, lineNumber, lineStart, comments),
-    ...productionNumberTokens(commentLine, lineNumber, dialect),
-    ...productionTokens(line, lineNumber, production),
-    ...literalTokens(commentLine, lineNumber),
-    ...ebnfCharacterTokens(commentLine, lineNumber, dialect),
-    ...angleReferenceTokens(referenceLine, lineNumber, production),
-    ...bareReferenceTokens(referenceLine, lineNumber, dialect, production),
-    ...operatorTokens(literalLine, lineNumber),
-  ];
-}
-
-function maskMatch(match: string): string {
-  return " ".repeat(match.length);
-}
-
-function maskReferenceExclusions(
-  line: string,
-  dialect: Exclude<GrammarDialect, "abnf">,
-): string {
-  let out = line.replace(LITERAL_RE, maskMatch);
-  if (dialect === "ebnf") {
-    out = out
-      .replace(EBNF_CHAR_CLASS_RE, maskMatch)
-      .replace(EBNF_CHAR_CODE_RE, maskMatch);
-  }
-  return out;
-}
-
-function commentTokens(
-  line: string,
-  lineNumber: number,
-  lineStart: number,
-  comments: readonly CommentRange[],
-): GrammarToken[] {
-  const lineEnd = lineStart + line.length;
-  return comments.flatMap((comment) => {
-    const start = Math.max(comment.start, lineStart);
-    const end = Math.min(comment.end, lineEnd);
-    return start < end
-      ? [
-          {
-            kind: "comment" as const,
-            text: line.slice(start - lineStart, end - lineStart),
-            line: lineNumber,
-            column: start - lineStart,
-          },
-        ]
-      : [];
-  });
-}
-
-function maskCommentRanges(
-  line: string,
-  lineStart: number,
-  comments: readonly CommentRange[],
-): string {
-  const masked = line.split("");
-  for (const comment of comments) {
-    const start = Math.max(comment.start - lineStart, 0);
-    const end = Math.min(comment.end - lineStart, line.length);
-    for (let i = start; i < end; i++) {
-      masked[i] = " ";
-    }
-  }
-  return masked.join("");
-}
-
-function productionNumberTokens(
-  line: string,
-  lineNumber: number,
-  dialect: Exclude<GrammarDialect, "abnf">,
-): GrammarToken[] {
-  if (dialect !== "ebnf") {
-    return [];
-  }
-  const match = line.match(EBNF_PRODUCTION_NUMBER_RE);
-  const text = match?.[1];
-  return text
-    ? [{ kind: "number", text, line: lineNumber, column: line.indexOf(text) }]
-    : [];
-}
-
-function productionTokens(
-  line: string,
-  lineNumber: number,
-  production: RegExpMatchArray | null,
-): GrammarToken[] {
-  if (!production) {
-    return [];
-  }
-  const name = production[1] ?? "";
-  const assignment = production[2] ?? "::=";
-  return [
-    {
-      kind: "ruleName",
-      text: name,
-      line: lineNumber,
-      column: line.indexOf(name),
-    },
-    {
-      kind: "assignment",
-      text: assignment,
-      line: lineNumber,
-      column: line.indexOf(assignment),
-    },
-  ];
-}
-
-function literalTokens(line: string, lineNumber: number): GrammarToken[] {
-  return Array.from(line.matchAll(LITERAL_RE), (match) => ({
-    kind: "literal" as const,
-    text: match[0] ?? "",
-    line: lineNumber,
-    column: match.index ?? 0,
-  }));
-}
-
-function ebnfCharacterTokens(
-  line: string,
-  lineNumber: number,
-  dialect: Exclude<GrammarDialect, "abnf">,
-): GrammarToken[] {
-  if (dialect !== "ebnf") {
-    return [];
-  }
-  const classTokens = Array.from(
-    line.matchAll(EBNF_CHAR_CLASS_RE),
-    (match) => ({
-      kind: "charClass" as const,
-      text: match[0] ?? "",
-      line: lineNumber,
-      column: match.index ?? 0,
-    }),
-  );
-  const classRanges = classTokens.map((token) => ({
-    start: token.column,
-    end: token.column + token.text.length,
-  }));
-  const codeTokens = Array.from(line.matchAll(EBNF_CHAR_CODE_RE), (match) => {
-    const column = match.index ?? 0;
-    return {
-      kind: "charCode" as const,
-      text: match[0] ?? "",
-      line: lineNumber,
-      column,
-    };
-  }).filter(
-    (token) =>
-      !classRanges.some(
-        (range) => token.column >= range.start && token.column < range.end,
-      ),
-  );
-  return [...classTokens, ...codeTokens];
-}
-
-function angleReferenceTokens(
-  line: string,
-  lineNumber: number,
-  production: RegExpMatchArray | null,
-): GrammarToken[] {
-  return Array.from(line.matchAll(ANGLE_RE), (match) => ({
-    kind: "reference" as const,
-    text: match[0] ?? "",
-    line: lineNumber,
-    column: match.index ?? 0,
-  })).filter((token) => !(production && token.text === production[1]));
-}
-
-function bareReferenceTokens(
-  line: string,
-  lineNumber: number,
-  dialect: Exclude<GrammarDialect, "abnf">,
-  production: RegExpMatchArray | null,
-): GrammarToken[] {
-  if (dialect === "rbnf") {
-    return [];
-  }
-  return Array.from(line.matchAll(BARE_RE), (match) => ({
-    kind: "reference" as const,
-    text: match[0] ?? "",
-    line: lineNumber,
-    column: match.index ?? 0,
-  })).filter((token) => !(production && token.text === production[1]));
-}
-
-function operatorTokens(line: string, lineNumber: number): GrammarToken[] {
-  return [
-    ...repeatedOperatorTokens(line, lineNumber, "|", "alternative"),
-    ...repeatedOperatorTokens(line, lineNumber, "?", "repeat"),
-    ...repeatedOperatorTokens(line, lineNumber, "+", "repeat"),
-    ...repeatedOperatorTokens(line, lineNumber, "*", "repeat"),
-    ...repeatedOperatorTokens(line, lineNumber, "(", "group"),
-    ...repeatedOperatorTokens(line, lineNumber, ")", "group"),
-    ...repeatedOperatorTokens(line, lineNumber, "[", "group"),
-    ...repeatedOperatorTokens(line, lineNumber, "]", "group"),
-    ...repeatedOperatorTokens(line, lineNumber, "{", "group"),
-    ...repeatedOperatorTokens(line, lineNumber, "}", "group"),
-  ];
-}
-
-function repeatedOperatorTokens(
-  line: string,
-  lineNumber: number,
-  operator: string,
-  kind: GrammarTokenKind,
-): GrammarToken[] {
   const tokens: GrammarToken[] = [];
-  let column = line.indexOf(operator);
-  while (column >= 0) {
-    tokens.push({ kind, text: operator, line: lineNumber, column });
-    column = line.indexOf(operator, column + 1);
+  for (const token of scan.tokens) {
+    const kind = grammarKind(token, dialect, headNames);
+    if (kind) {
+      pushPerLine(tokens, kind, token);
+    }
   }
   return tokens;
+}
+
+function grammarKind(
+  token: ScanToken,
+  dialect: ProductionDialect,
+  headNames: ReadonlySet<ScanToken>,
+): GrammarTokenKind | undefined {
+  switch (token.kind) {
+    case "comment":
+    case "annotation":
+      return "comment";
+    case "string":
+      return "literal";
+    case "charClass":
+    case "charCode":
+    case "assignment":
+    case "alternative":
+    case "repeat":
+    case "group":
+      return token.kind;
+    case "productionNumber":
+      return "number";
+    case "exclusion":
+      return "operator";
+    case "angleName":
+      return headNames.has(token) ? "ruleName" : "reference";
+    case "name":
+      if (headNames.has(token)) {
+        return "ruleName";
+      }
+      return dialect === "rbnf" ? undefined : "reference";
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Pushes a token, splitting multi-line tokens (block comments) per line.
+ */
+function pushPerLine(
+  out: GrammarToken[],
+  kind: GrammarTokenKind,
+  token: ScanToken,
+): void {
+  if (token.line === token.endLine) {
+    out.push({
+      kind,
+      text: token.text,
+      line: token.line,
+      column: token.column,
+    });
+    return;
+  }
+  const lines = token.text.split(LINE_SPLIT_RE);
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i] ?? "";
+    if (text.length > 0) {
+      out.push({
+        kind,
+        text,
+        line: token.line + i,
+        column: i === 0 ? token.column : 0,
+      });
+    }
+  }
 }

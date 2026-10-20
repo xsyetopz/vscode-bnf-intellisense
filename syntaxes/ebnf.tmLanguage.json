@@ -26,15 +26,25 @@
     "expression": {
       "patterns": [
         { "include": "#comment" },
+        { "include": "#annotation" },
         { "include": "#character-class" },
         { "include": "#character-code" },
         { "include": "#double-string" },
         { "include": "#single-string" },
         { "include": "#alternation" },
         { "include": "#suffix-repetition" },
+        { "include": "#exclusion" },
         { "include": "#group-delimiter" },
         { "include": "#identifier" }
       ]
+    },
+    "annotation": {
+      "name": "comment.block.documentation.annotation.ebnf",
+      "match": "\\[\\s*(?i:wfc|vc)\\s*:[^\\]\\r\\n]*\\]"
+    },
+    "exclusion": {
+      "name": "keyword.operator.exclusion.ebnf",
+      "match": "(?<=[\\s'\")\\]}])-"
     },
     "character-class": {
       "name": "constant.numeric.character-class.ebnf",
@@ -72,7 +82,7 @@
     },
     "identifier": {
       "name": "variable.other.rule.ebnf",
-      "match": "<[^<>\\r\\n]+>|[A-Za-z_][A-Za-z0-9_.:-]*"
+      "match": "<[^<>\\r\\n]+>|[A-Za-z_][A-Za-z0-9_.:-]*(?<![.:-])"
     }
   }
 }

@@ -9,14 +9,14 @@
     "body": ["<${1:rule name}> ::= ${2:first}", "    | ${3:second}"],
     "description": "Insert an RBNF rule with two alternatives."
   },
-  "Zero or more": {
-    "prefix": "rep",
-    "body": ["*(${1:element})"],
-    "description": "Insert an RBNF zero-or-more repetition."
+  "Optional element": {
+    "prefix": "opt",
+    "body": ["[${1:element}]"],
+    "description": "Insert an RBNF optional element (RFC 5511 square brackets)."
   },
-  "One or more": {
-    "prefix": "rep1",
-    "body": ["1*(${1:element})"],
-    "description": "Insert an RBNF one-or-more repetition."
+  "Repeatable element": {
+    "prefix": "rep",
+    "body": ["${1:element} ..."],
+    "description": "Insert an RBNF repeatable element (RFC 5511 ellipsis)."
   }
 }

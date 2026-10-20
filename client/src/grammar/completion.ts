@@ -4,12 +4,29 @@ import {
   CompletionItemKind,
   type CompletionItemProvider,
   type Position,
+  Range,
   SnippetString,
   type TextDocument,
 } from "vscode";
 import { CORE_RULES } from "../abnf/core-rules.ts";
 import { getGrammarDialectDescriptor, normalizeSymbolName } from "./grammar.ts";
+import { type ScanToken, scanProductionGrammar } from "./scanner.ts";
+import { tokenizeGrammar } from "./tokenizer.ts";
 import type { GrammarWorkspace } from "./workspace.ts";
+
+/**
+ * Completion trigger characters per dialect: "%" is ABNF-only, "#" is
+ * EBNF-only, and "<" belongs to the angle-bracket dialects.
+ */
+export const COMPLETION_TRIGGERS: ReadonlyArray<{
+  language: string;
+  triggers: readonly string[];
+}> = [
+  { language: "abnf", triggers: ["%"] },
+  { language: "bnf", triggers: ["<"] },
+  { language: "ebnf", triggers: ["#"] },
+  { language: "rbnf", triggers: ["<"] },
+];
 
 /**
  * VS Code completion provider for grammar rule names.
@@ -23,15 +40,96 @@ export class GrammarCompletionProvider implements CompletionItemProvider {
 
   provideCompletionItems(
     doc: TextDocument,
-    _position: Position,
+    position: Position,
     _token: CancellationToken,
   ): CompletionItem[] {
     const result = this.#manager.get(doc);
-    return [
+    // Never complete inside comments, strings, or character classes.
+    if (isInsideNonCode(doc.getText(), position, result.dialect)) {
+      return [];
+    }
+    const items = [
       ...ruleCompletions(result, this.#manager),
       ...coreRuleCompletions(result.dialect),
       ...dialectSnippetCompletions(result.dialect),
     ];
+    applyAngleReplaceRange(items, doc, position, result.dialect);
+    return items;
+  }
+}
+
+function isInsideToken(token: ScanToken, offset: number): boolean {
+  if (token.kind === "comment" || token.unterminated) {
+    // Typing at the end of a line comment or of an open token is still inside.
+    return token.start < offset && offset <= token.end;
+  }
+  const delimited =
+    token.kind === "string" ||
+    token.kind === "charClass" ||
+    token.kind === "annotation";
+  return delimited && token.start < offset && offset < token.end;
+}
+
+function isInsideNonCode(
+  text: string,
+  position: Position,
+  dialect: ManagerResult["dialect"],
+): boolean {
+  if (dialect === "abnf") {
+    return tokenizeGrammar(text, dialect).some(
+      (token) =>
+        token.line === position.line &&
+        (token.kind === "comment" || token.kind === "literal") &&
+        token.column < position.character &&
+        position.character <=
+          token.column + token.text.length - (token.kind === "comment" ? 0 : 1),
+    );
+  }
+  const scan = scanProductionGrammar(text, dialect);
+  const offset =
+    (scan.lineIndex.starts[position.line] ?? text.length) + position.character;
+  return scan.tokens.some(
+    (token) => token.start < offset && isInsideToken(token, offset),
+  );
+}
+
+const OPEN_ANGLE_RE = /<[^<>\r\n]*$/;
+
+/**
+ * BNF and RBNF names include their angle brackets. After the user typed "<",
+ * replace the partial name so that completing does not produce "<<name>".
+ */
+function applyAngleReplaceRange(
+  items: CompletionItem[],
+  doc: TextDocument,
+  position: Position,
+  dialect: ManagerResult["dialect"],
+): void {
+  if (dialect !== "bnf" && dialect !== "rbnf") {
+    return;
+  }
+  const line = doc.lineAt(position.line).text;
+  const before = line.slice(0, position.character);
+  const open = OPEN_ANGLE_RE.exec(before);
+  if (!open) {
+    return;
+  }
+  const end = line[position.character] === ">" ? 1 : 0;
+  const range = new Range(
+    position.line,
+    open.index,
+    position.line,
+    position.character + end,
+  );
+  for (const item of items) {
+    if (item.kind === CompletionItemKind.Function) {
+      const label =
+        typeof item.label === "string" ? item.label : item.label.label;
+      if (label.startsWith("<")) {
+        item.range = range;
+        item.filterText = label;
+      }
+    }
   }
 }
 
@@ -172,14 +270,14 @@ function dialectSnippetCompletions(
           "RFC 5511 rule",
         ),
         snippet(
-          "RBNF repeat",
-          `*(${placeholder("1:element")})`,
-          "RFC 5511 zero-or-more repetition",
+          "RBNF optional",
+          `[${placeholder("1:element")}]`,
+          "RFC 5511 optional element",
         ),
         snippet(
-          "RBNF one-or-more",
-          `1*(${placeholder("1:element")})`,
-          "RFC 5511 one-or-more repetition",
+          "RBNF repetition",
+          `${placeholder("1:element")} ...`,
+          "RFC 5511 repeatable element",
         ),
       ];
     case "bnf":

@@ -1,3 +1,4 @@
+import { RECENT_DOCUMENTS, RecentCache } from "../recent-cache.ts";
 import type { AbnfToken } from "./types.ts";
 import { AbnfTokenKind } from "./types.ts";
 
@@ -250,7 +251,7 @@ function scanNumericRange(
   j: number,
   isValidDigit: (ch: string) => boolean,
 ): number {
-  let pos = j + 1; // skip the "-"
+  let pos = j + 1;
   while (pos < text.length && isValidDigit(text.charAt(pos))) {
     pos++;
   }
@@ -284,7 +285,7 @@ function scanNumericValue(
   column: number,
   isValidDigit: (ch: string) => boolean,
 ): ScanResult {
-  let j = i + 2; // skip % and base letter
+  let j = i + 2;
 
   while (j < text.length && isValidDigit(text.charAt(j))) {
     j++;
@@ -435,4 +436,18 @@ export function tokenize(text: string): AbnfToken[] {
   }
 
   return tokens;
+}
+
+const recentTokenizations = new RecentCache<readonly AbnfToken[]>(
+  RECENT_DOCUMENTS,
+);
+
+/**
+ * Tokenizes a whole document, remembering recent results per text so parse,
+ * analysis, formatting, hints, and highlighting of one version share a single
+ * pass. The returned array is shared and must not be mutated; use `tokenize`
+ * for sub-texts.
+ */
+export function tokenizeDocument(text: string): readonly AbnfToken[] {
+  return recentTokenizations.get("abnf", text, () => tokenize(text));
 }

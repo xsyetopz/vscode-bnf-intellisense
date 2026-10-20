@@ -14,10 +14,10 @@ describe("grammar symbols", () => {
       "rbnf",
     );
     const symbols = grammar.buildGrammarSymbolTable(doc, "rbnf");
-    expect(symbols.references.get("<wf flow descriptor>")?.[0]?.name).toBe(
+    expect(symbols.references.get("<WF flow descriptor>")?.[0]?.name).toBe(
       "<WF flow descriptor>",
     );
-    expect(symbols.references.get("<se flow descriptor>")?.[0]?.name).toBe(
+    expect(symbols.references.get("<SE flow descriptor>")?.[0]?.name).toBe(
       "<SE flow descriptor>",
     );
     expect(symbols.definitions.has("flow")).toBe(false);

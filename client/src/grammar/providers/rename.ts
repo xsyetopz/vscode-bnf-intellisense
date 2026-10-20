@@ -7,8 +7,12 @@ import {
   WorkspaceEdit,
 } from "vscode";
 import type { GrammarDialect } from "../dialects.ts";
+import { normalizeSymbolName } from "../grammar.ts";
 import type { GrammarWorkspace } from "../workspace.ts";
-import { collectWorkspaceSymbolLocations } from "./symbol-locations.ts";
+import {
+  collectWorkspaceDefinitionLocations,
+  collectWorkspaceSymbolLocations,
+} from "./symbol-locations.ts";
 import { getWordLookup } from "./word-at-position.ts";
 
 /**
@@ -30,6 +34,20 @@ export class GrammarRenameProvider implements RenameProvider {
     const lookup = getWordLookup(doc, position, this.#grammarWorkspace);
     if (!(lookup && isValidRuleName(newName, lookup.dialect))) {
       return undefined;
+    }
+    const newKey = normalizeSymbolName(newName, lookup.dialect);
+    if (
+      newKey !== lookup.word &&
+      collectWorkspaceDefinitionLocations(
+        this.#grammarWorkspace,
+        newKey,
+        lookup.dialect,
+        doc.uri.toString(),
+        lookup.symbolTable,
+        doc.uri,
+      ).length > 0
+    ) {
+      throw new Error(`A rule named "${newName}" is already defined`);
     }
 
     const edit = new WorkspaceEdit();
@@ -56,7 +74,7 @@ export class GrammarRenameProvider implements RenameProvider {
     if (!lookup) {
       return undefined;
     }
-    return { range: lookup.wordRange, placeholder: lookup.word };
+    return { range: lookup.wordRange, placeholder: lookup.text };
   }
 }
 

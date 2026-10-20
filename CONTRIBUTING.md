@@ -30,12 +30,14 @@ Follow the [Contributor Code of Conduct](CODE_OF_CONDUCT.md).
 bun run build
 ```
 
-The build writes the extension bundle to `dist/extension.js`.
+The build writes the extension bundle to `dist/extension.cjs`.
 
 ### Testing Your Changes
 
-1. Open the project in VS Code.
-2. Press `F5` to launch an extension host window.
+1. Run `bun run build`. The extension loads `dist/extension.cjs`. The repo
+   does not commit a `.vscode/launch.json`.
+2. Start an Extension Development Host from the repo root, for example
+   `code --extensionDevelopmentPath="$PWD"`.
 3. Open `.abnf`, `.bnf`, `.ebnf`, and `.rbnf` files that match your change.
 
 ### Code Style
@@ -43,23 +45,27 @@ The build writes the extension bundle to `dist/extension.js`.
 This project uses [Biome](https://biomejs.dev) for code quality:
 
 ```bash
+bun run verify      # Biome, markdownlint, and typecheck in parallel
 bun run biome:check   # Check code style without modifying files
+bun run md:check      # Lint Markdown (md:fix auto-fixes)
 bun run biome:format  # Auto-fix formatting only
 bun run biome:lint    # Auto-fix lint findings only
 ```
 
-Run Biome, typecheck, tests, and build before opening a PR.
+Run `bun run verify`, tests, and build before opening a PR.
 
 ### Git Hooks
 
-Install the local hooks once per clone:
+Hooks are managed by [Lefthook](https://lefthook.dev) and install
+automatically with `bun install` (the `prepare` script). To reinstall:
 
 ```bash
-bun run hooks:install
+bunx lefthook install
 ```
 
-The pre-commit hook checks formatting and lint without changing files. The
-pre-push hook runs typecheck, tests, and build.
+The pre-commit hook runs Biome and markdownlint on staged files. The
+commit-msg hook runs commitlint (conventional commits). The pre-push hook
+runs `bun check`, tests, and build.
 
 ## Making Changes
 
@@ -74,16 +80,24 @@ TextMate grammar improvements are in `syntaxes/*.tmLanguage.json`:
 - Include delimiter scopes such as `punctuation.definition.*` for theme support
 - Prevent unintended multiline matching with lookahead assertions
 
-### Language Server Changes
+### TypeScript Changes
 
 TypeScript code in `client/src/`:
 
 - Follow TypeScript strict mode. Avoid `any` and non-null assertions unless the
   nearby code explains why they are safe.
 - Use discriminated unions over type assertions
-- Avoid `unwrap()`/`expect()` equivalents; use explicit error handling
-- Export public APIs from provider modules
 - Keep settings under the `bnf.*` namespace for all supported grammar families
+
+### Provider Changes
+
+Providers live in `client/src/grammar/providers/`, one file per VS Code provider:
+
+- Register a new provider in `providers/index.ts`.
+- Export public APIs from the provider module.
+- Add focused tests in `client/src/__tests__/grammar/provider-*.test.ts`, and
+  use the shared helpers in `provider-test-utils.ts`.
+- Write each test in Arrange-Act-Assert order.
 
 ### Commit Messages
 
@@ -97,7 +111,8 @@ body...
 Co-Authored-By: Your Name <your.email@example.com>
 ```
 
-Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `chore`
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`,
+`chore`, `revert`
 
 Examples:
 

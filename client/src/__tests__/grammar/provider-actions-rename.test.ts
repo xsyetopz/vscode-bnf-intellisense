@@ -33,8 +33,9 @@ describe("grammar code action and rename providers", () => {
       "ebnf",
     );
     const diagnostic = {
+      code: "bnf.iso-ebnf",
       message: 'Use "::=" for W3C XML EBNF productions.',
-      range: new RangeMock(0, 5, 0, 6),
+      range: new RangeMock(0, 0, 0, 12),
     };
     const actions =
       provider.provideCodeActions(

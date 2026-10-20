@@ -1,288 +1,68 @@
 import { mock } from "bun:test";
-
-const configurationValues = new Map<string, unknown>();
-const LEADING_SLASHES_RE = /^\/+/;
-
-/**
- * Sets one VS Code configuration value for tests.
- */
-export function setConfigurationValue(key: string, value: unknown): void {
-  configurationValues.set(key, value);
-}
-
-/**
- * Clears test configuration overrides.
- */
-export function resetConfigurationValues(): void {
-  configurationValues.clear();
-}
-
-/**
- * Minimal VS Code Position test double.
- */
-export class PositionMock {
-  line: number;
-  character: number;
-  constructor(line: number, character: number) {
-    this.line = line;
-    this.character = character;
-  }
-}
-
-/**
- * Minimal VS Code Range test double.
- */
-export class RangeMock {
-  start: PositionMock;
-  end: PositionMock;
-  constructor(
-    startLine: number | PositionMock,
-    startCharacter: number | PositionMock,
-    endLine?: number,
-    endCharacter?: number,
-  ) {
-    if (
-      startLine instanceof PositionMock &&
-      startCharacter instanceof PositionMock
-    ) {
-      this.start = startLine;
-      this.end = startCharacter;
-    } else {
-      this.start = new PositionMock(
-        startLine as number,
-        startCharacter as number,
-      );
-      this.end = new PositionMock(
-        endLine ?? (startLine as number),
-        endCharacter ?? (startCharacter as number),
-      );
-    }
-  }
-
-  intersection(other: RangeMock): RangeMock | undefined {
-    const start =
-      this.start.line > other.start.line ||
-      (this.start.line === other.start.line &&
-        this.start.character >= other.start.character)
-        ? this.start
-        : other.start;
-    const end =
-      this.end.line < other.end.line ||
-      (this.end.line === other.end.line &&
-        this.end.character <= other.end.character)
-        ? this.end
-        : other.end;
-    if (
-      start.line > end.line ||
-      (start.line === end.line && start.character > end.character)
-    ) {
-      return undefined;
-    }
-    return new RangeMock(start, end);
-  }
-}
+import { configurationValues, settingScopes } from "./vscode-mock/config.ts";
+import {
+  CodeActionKindMock,
+  CodeActionMock,
+  CompletionItemMock,
+  DocumentHighlightMock,
+  HoverMock,
+  InlayHintMock,
+  LocationMock,
+  MarkdownStringMock,
+  PositionMock,
+  RangeMock,
+  SemanticTokensBuilderMock,
+  SemanticTokensLegendMock,
+  SnippetStringMock,
+  SnippetTextEditMock,
+  UriMock,
+  WorkspaceEditMock,
+} from "./vscode-mock/core.ts";
+import {
+  configurationListeners,
+  EventEmitterMock,
+  textDocumentListeners,
+} from "./vscode-mock/events.ts";
+import {
+  commandsHostMock,
+  languagesHostMock,
+  RelativePatternMock,
+  windowHostMock,
+  workspaceFolders,
+  workspaceHostMock,
+} from "./vscode-mock/extension-host.ts";
+import {
+  CallHierarchyIncomingCallMock,
+  CallHierarchyItemMock,
+  CallHierarchyOutgoingCallMock,
+  CodeLensMock,
+  DocumentLinkMock,
+  DocumentSymbolMock,
+  FoldingRangeMock,
+  LinkedEditingRangesMock,
+  openTextDocuments,
+  registration,
+  SelectionRangeMock,
+  SymbolInformationMock,
+} from "./vscode-mock/providers.ts";
 
 /**
- * Minimal VS Code markdown string test double.
+ * Test doubles for the `vscode` module, split by topic under `vscode-mock/`.
+ * Importing this file installs the module mock; it also re-exports every
+ * double and test helper, so tests keep one import path.
  */
-export class MarkdownStringMock {
-  value: string;
-
-  constructor(value = "") {
-    this.value = value;
-  }
-}
-
-/**
- * Minimal VS Code hover test double.
- */
-export class HoverMock {
-  contents: unknown;
-  range: unknown;
-
-  constructor(contents: unknown, range?: unknown) {
-    this.contents = contents;
-    this.range = range;
-  }
-}
-
-/**
- * Minimal VS Code inlay hint test double.
- */
-export class InlayHintMock {
-  position: unknown;
-  label: unknown;
-  kind: unknown;
-  paddingLeft: boolean | undefined;
-
-  constructor(position: unknown, label: unknown, kind?: unknown) {
-    this.position = position;
-    this.label = label;
-    this.kind = kind;
-    this.paddingLeft = undefined;
-  }
-}
-
-/**
- * Minimal VS Code snippet string test double.
- */
-export class SnippetStringMock {
-  value: string;
-
-  constructor(value = "") {
-    this.value = value;
-  }
-}
-
-/**
- * Minimal VS Code completion item test double.
- */
-export class CompletionItemMock {
-  label: string;
-  kind: unknown;
-  detail: string | undefined;
-  documentation: unknown;
-  insertText: unknown;
-
-  constructor(label: string, kind?: unknown) {
-    this.label = label;
-    this.kind = kind;
-    this.detail = undefined;
-    this.documentation = undefined;
-    this.insertText = undefined;
-  }
-}
-
-/**
- * Minimal VS Code location test double.
- */
-export class LocationMock {
-  uri: unknown;
-  range: unknown;
-
-  constructor(uri: unknown, range: unknown) {
-    this.uri = uri;
-    this.range = range;
-  }
-}
-
-/**
- * Minimal VS Code Uri test double.
- */
-export class UriMock {
-  scheme: string;
-  path: string;
-
-  constructor(scheme: string, path: string) {
-    this.scheme = scheme;
-    this.path = path;
-  }
-
-  static parse(value: string): UriMock {
-    const [scheme, ...rest] = value.split(":");
-    return new UriMock(
-      scheme ?? "",
-      rest.join(":").replace(LEADING_SLASHES_RE, "/"),
-    );
-  }
-
-  toString(): string {
-    return `${this.scheme}:${this.path}`;
-  }
-}
-
-/**
- * Minimal VS Code document highlight test double.
- */
-export class DocumentHighlightMock {
-  range: unknown;
-  kind: unknown;
-
-  constructor(range: unknown, kind?: unknown) {
-    this.range = range;
-    this.kind = kind;
-  }
-}
-
-/**
- * Minimal VS Code workspace edit test double.
- */
-export class WorkspaceEditMock {
-  readonly inserts: Array<{ uri: unknown; position: unknown; text: string }> =
-    [];
-  readonly replacements: Array<{ uri: unknown; range: unknown; text: string }> =
-    [];
-
-  insert(uri: unknown, position: unknown, text: string): void {
-    this.inserts.push({ uri, position, text });
-  }
-
-  replace(uri: unknown, range: unknown, text: string): void {
-    this.replacements.push({ uri, range, text });
-  }
-}
-
-/**
- * Minimal VS Code code action test double.
- */
-export class CodeActionMock {
-  title: string;
-  kind: unknown;
-  edit: unknown;
-  diagnostics: unknown;
-  isPreferred: boolean | undefined;
-
-  constructor(title: string, kind?: unknown) {
-    this.title = title;
-    this.kind = kind;
-    this.edit = undefined;
-    this.diagnostics = undefined;
-    this.isPreferred = undefined;
-  }
-}
-
-/**
- * Minimal VS Code semantic token legend test double.
- */
-export class SemanticTokensLegendMock {
-  tokenTypes: readonly string[];
-  tokenModifiers: readonly string[];
-
-  constructor(
-    tokenTypes: readonly string[],
-    tokenModifiers: readonly string[],
-  ) {
-    this.tokenTypes = tokenTypes;
-    this.tokenModifiers = tokenModifiers;
-  }
-}
-
-/**
- * Minimal VS Code semantic token builder test double.
- */
-export class SemanticTokensBuilderMock {
-  readonly entries: Array<{
-    range: unknown;
-    tokenType: string;
-    tokenModifiers: readonly string[];
-  }> = [];
-
-  push(
-    range: unknown,
-    tokenType: string,
-    tokenModifiers: readonly string[] = [],
-  ): void {
-    this.entries.push({ range, tokenType, tokenModifiers });
-  }
-
-  build() {
-    return { data: this.entries };
-  }
-}
+export * from "./vscode-mock/config.ts";
+export * from "./vscode-mock/core.ts";
+export * from "./vscode-mock/events.ts";
+export * from "./vscode-mock/extension-host.ts";
+export * from "./vscode-mock/providers.ts";
 
 mock.module("vscode", () => ({
+  EventEmitter: EventEmitterMock,
+  EndOfLine: { LF: 1, CRLF: 2 },
+  SnippetTextEdit: SnippetTextEditMock,
   CodeAction: CodeActionMock,
-  CodeActionKind: { QuickFix: "quickfix" },
+  CodeActionKind: CodeActionKindMock,
   CompletionItem: CompletionItemMock,
   CompletionItemKind: {
     Constant: 1,
@@ -299,17 +79,106 @@ mock.module("vscode", () => ({
   MarkdownString: MarkdownStringMock,
   Position: PositionMock,
   Range: RangeMock,
+  RelativePattern: RelativePatternMock,
   Uri: UriMock,
   SemanticTokensBuilder: SemanticTokensBuilderMock,
   SemanticTokensLegend: SemanticTokensLegendMock,
   SnippetString: SnippetStringMock,
+  FoldingRange: FoldingRangeMock,
+  SymbolInformation: SymbolInformationMock,
+  SelectionRange: SelectionRangeMock,
+  CodeLens: CodeLensMock,
+  CallHierarchyItem: CallHierarchyItemMock,
+  CallHierarchyIncomingCall: CallHierarchyIncomingCallMock,
+  CallHierarchyOutgoingCall: CallHierarchyOutgoingCallMock,
+  LinkedEditingRanges: LinkedEditingRangesMock,
+  DocumentLink: DocumentLinkMock,
+  SymbolKind: { Function: 11, Class: 4, Variable: 12 },
+  DocumentSymbol: DocumentSymbolMock,
+  ViewColumn: { One: 1, Two: 2, Beside: -2 },
+  commands: commandsHostMock,
+  window: windowHostMock,
+  languages: {
+    ...languagesHostMock,
+    registerSelectionRangeProvider: registration("selectionRange"),
+    registerCodeLensProvider: registration("codeLens"),
+    registerCallHierarchyProvider: registration("callHierarchy"),
+    registerDocumentRangeFormattingEditProvider:
+      registration("rangeFormatting"),
+    registerOnTypeFormattingEditProvider: registration("onTypeFormatting"),
+    registerLinkedEditingRangeProvider: registration("linkedEditing"),
+    registerDocumentLinkProvider: registration("documentLinks"),
+    registerDeclarationProvider: registration("declaration"),
+    registerDocumentRangeSemanticTokensProvider: registration(
+      "rangeSemanticTokens",
+    ),
+    registerDocumentSemanticTokensProvider: registration("semanticTokens"),
+    registerDocumentSymbolProvider: registration("documentSymbol"),
+    registerDefinitionProvider: registration("definition"),
+    registerReferenceProvider: registration("references"),
+    registerHoverProvider: registration("hover"),
+    registerRenameProvider: registration("rename"),
+    registerDocumentHighlightProvider: registration("highlight"),
+    registerFoldingRangeProvider: registration("folding"),
+    registerInlayHintsProvider: registration("inlayHints"),
+    registerCompletionItemProvider: registration("completion"),
+    registerCodeActionsProvider: registration("codeActions"),
+    registerDocumentFormattingEditProvider: registration("formatting"),
+    registerWorkspaceSymbolProvider: (provider: unknown) =>
+      registration("workspaceSymbol")(undefined, provider),
+  },
+  TextEdit: {
+    replace: (range: unknown, newText: string) => ({ range, newText }),
+  },
   WorkspaceEdit: WorkspaceEditMock,
   workspace: {
-    getConfiguration: (section = "") => ({
-      get: <T>(key: string, fallback?: T) =>
-        (configurationValues.get(
-          section.length > 0 ? `${section}.${key}` : key,
-        ) as T | undefined) ?? fallback,
+    ...workspaceHostMock,
+    get textDocuments() {
+      return openTextDocuments;
+    },
+    get workspaceFolders() {
+      return workspaceFolders;
+    },
+    onDidChangeTextDocument: (
+      listener: (event: {
+        document: { languageId: string };
+        contentChanges: unknown[];
+      }) => void,
+    ) => {
+      textDocumentListeners.add(listener);
+      return { dispose: () => textDocumentListeners.delete(listener) };
+    },
+    onDidChangeConfiguration: (
+      listener: (event: {
+        affectsConfiguration: (section: string) => boolean;
+      }) => void,
+    ) => {
+      configurationListeners.add(listener);
+      return { dispose: () => configurationListeners.delete(listener) };
+    },
+    getConfiguration: (
+      section = "",
+      scope?: { languageId?: string; path?: string; toString?: () => string },
+    ) => ({
+      get: <T>(key: string, fallback?: T) => {
+        const full = section.length > 0 ? `${section}.${key}` : key;
+        const folderValue =
+          scope?.path === undefined
+            ? undefined
+            : configurationValues.get(`folder:${scope.toString?.()}:${full}`);
+        if (folderValue !== undefined) {
+          return folderValue as T;
+        }
+        const scoped =
+          scope?.languageId &&
+          settingScopes.get(full) === "language-overridable"
+            ? configurationValues.get(`[${scope.languageId}]${full}`)
+            : undefined;
+        return (
+          ((scoped ?? configurationValues.get(full)) as T | undefined) ??
+          fallback
+        );
+      },
     }),
   },
 }));

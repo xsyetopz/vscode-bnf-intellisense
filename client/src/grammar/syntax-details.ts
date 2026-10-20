@@ -1,21 +1,11 @@
 import { Hover, InlayHint, InlayHintKind, MarkdownString, Range } from "vscode";
+import { tokenize } from "../abnf/tokenizer.ts";
+import { type AbnfToken, AbnfTokenKind } from "../abnf/types.ts";
 import type { GrammarDialect } from "./dialects.ts";
 
 const EBNF_CHAR_CLASS_RE = /\[(?:\^)?[^\]\r\n]*\]/g;
 const EBNF_CHAR_CODE_RE = /#x[0-9A-Fa-f]+/g;
-const ABNF_NUMERIC_RE =
-  /%[xXdDbB][0-9A-Fa-f]+(?:(?:-[0-9A-Fa-f]+)|(?:\.[0-9A-Fa-f]+)+)?/g;
-const ABNF_REPEAT_RE = /\d*\*\d*/g;
 const SUFFIX_REPEAT_RE = /[?+*]/g;
-const ABNF_HEX_RE = /%[xX]/;
-const ABNF_DECIMAL_RE = /%[dD]/;
-const ABNF_BINARY_RE = /%[bB]/;
-const ABNF_RANGE_RE = /-/;
-const ABNF_SEQUENCE_RE = /\./;
-const ABNF_CASE_SENSITIVE_RE = /%[sS]"/;
-const ABNF_CASE_INSENSITIVE_RE = /%[iI]"/;
-const ABNF_OPTIONAL_RE = /\[\s*[^\]]+\]/;
-const ABNF_REPEAT_HINT_RE = /\d*\*\d*/;
 const OPTIONAL_SUFFIX_RE = /\?/;
 const ZERO_OR_MORE_SUFFIX_RE = /\*/;
 const ONE_OR_MORE_SUFFIX_RE = /\+/;
@@ -29,16 +19,6 @@ type SyntaxLabelMatcher = {
   label: string;
   pattern: RegExp;
 };
-
-const ABNF_SYNTAX_LABELS: readonly SyntaxLabelMatcher[] = [
-  { label: "hex", pattern: ABNF_HEX_RE },
-  { label: "decimal", pattern: ABNF_DECIMAL_RE },
-  { label: "binary", pattern: ABNF_BINARY_RE },
-  { label: "case-sensitive", pattern: ABNF_CASE_SENSITIVE_RE },
-  { label: "case-insensitive", pattern: ABNF_CASE_INSENSITIVE_RE },
-  { label: "optional", pattern: ABNF_OPTIONAL_RE },
-  { label: "repetition", pattern: ABNF_REPEAT_HINT_RE },
-] as const;
 
 const PRODUCTION_SYNTAX_LABELS: readonly SyntaxLabelMatcher[] = [
   { label: "optional", pattern: OPTIONAL_SUFFIX_RE },
@@ -244,42 +224,46 @@ export function getSyntaxDetailInlays(
 }
 
 function syntaxDetailLabels(body: string, dialect: GrammarDialect): string[] {
-  const labels = new Set<string>(
-    collectPatternLabels(body, baseLabelMatchers(dialect)),
-  );
   if (dialect === "abnf") {
-    addAbnfTerminalLabels(labels, body);
-  } else if (dialect === "ebnf" && EBNF_CHAR_CLASS_RE.test(body)) {
+    return abnfSyntaxLabels(body);
+  }
+  const labels = new Set<string>(
+    PRODUCTION_SYNTAX_LABELS.filter(({ pattern }) => pattern.test(body)).map(
+      ({ label }) => label,
+    ),
+  );
+  if (dialect === "ebnf" && EBNF_CHAR_CLASS_RE.test(body)) {
     labels.add("character-class");
     EBNF_CHAR_CLASS_RE.lastIndex = 0;
   }
   return Array.from(labels);
 }
 
-function baseLabelMatchers(
-  dialect: GrammarDialect,
-): readonly SyntaxLabelMatcher[] {
-  return dialect === "abnf" ? ABNF_SYNTAX_LABELS : PRODUCTION_SYNTAX_LABELS;
-}
-
-function collectPatternLabels(
-  body: string,
-  matchers: readonly SyntaxLabelMatcher[],
-): string[] {
-  return matchers
-    .filter(({ pattern }) => pattern.test(body))
-    .map(({ label }) => label);
-}
-
-function addAbnfTerminalLabels(labels: Set<string>, body: string): void {
-  if (ABNF_RANGE_RE.test(body) && ABNF_NUMERIC_RE.test(body)) {
-    labels.add("range");
+function abnfSyntaxLabels(body: string): string[] {
+  const kinds = new Set<AbnfTokenKind>();
+  const bases = new Set<string>();
+  let range = false;
+  let sequence = false;
+  for (const token of tokenize(body)) {
+    kinds.add(token.kind);
+    if (token.kind === AbnfTokenKind.NumericValue) {
+      bases.add(token.text.charAt(1).toLowerCase());
+      range ||= token.text.includes("-");
+      sequence ||= token.text.includes(".");
+    }
   }
-  ABNF_NUMERIC_RE.lastIndex = 0;
-  if (ABNF_SEQUENCE_RE.test(body) && ABNF_NUMERIC_RE.test(body)) {
-    labels.add("sequence");
-  }
-  ABNF_NUMERIC_RE.lastIndex = 0;
+  const checks: [boolean, string][] = [
+    [bases.has("x"), "hex"],
+    [bases.has("d"), "decimal"],
+    [bases.has("b"), "binary"],
+    [kinds.has(AbnfTokenKind.CaseSensitiveString), "case-sensitive"],
+    [kinds.has(AbnfTokenKind.CaseInsensitiveString), "case-insensitive"],
+    [kinds.has(AbnfTokenKind.BracketOpen), "optional"],
+    [kinds.has(AbnfTokenKind.Asterisk), "repetition"],
+    [range, "range"],
+    [sequence, "sequence"],
+  ];
+  return checks.filter(([present]) => present).map(([, label]) => label);
 }
 
 function collectSyntaxMatches(
@@ -287,27 +271,16 @@ function collectSyntaxMatches(
   line: number,
   dialect: GrammarDialect,
 ): SyntaxMatch[] {
+  if (dialect === "abnf") {
+    return collectAbnfMatches(text, line);
+  }
   return [
-    ...collectMatches(
-      text,
-      line,
-      ABNF_NUMERIC_RE,
-      (match) => abnfNumericMarkdown(match),
-      dialect === "abnf",
-    ),
-    ...collectMatches(
-      text,
-      line,
-      ABNF_REPEAT_RE,
-      (match) => repetitionMarkdown(match, dialect),
-      dialect === "abnf",
-    ),
     ...collectMatches(
       text,
       line,
       SUFFIX_REPEAT_RE,
       (match) => repetitionMarkdown(match, dialect),
-      dialect !== "abnf",
+      true,
     ),
     ...collectMatches(
       text,
@@ -327,6 +300,93 @@ function collectSyntaxMatches(
     ),
     ...collectGroupMatches(text, line, dialect),
   ];
+}
+
+/**
+ * Collects ABNF hover matches from lexer tokens, so comments and strings
+ * never produce matches.
+ */
+function collectAbnfMatches(text: string, line: number): SyntaxMatch[] {
+  const matches: SyntaxMatch[] = [];
+  const tokens = tokenize(text);
+  const groups = DIALECT_GROUP_MARKDOWN.abnf;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i] as AbnfToken;
+    if (token.kind === AbnfTokenKind.NumericValue) {
+      matches.push(tokenMatch(line, token, abnfNumericMarkdown(token.text)));
+      continue;
+    }
+    const group = groups[token.text];
+    if (group && isGroupDelimiter(token)) {
+      matches.push(tokenMatch(line, token, group));
+      continue;
+    }
+    if (
+      token.kind === AbnfTokenKind.Integer ||
+      token.kind === AbnfTokenKind.Asterisk
+    ) {
+      const end = repetitionEnd(tokens, i);
+      if (end >= 0) {
+        const prefix = tokens.slice(i, end + 1);
+        const value = prefix.map((t) => t.text).join("");
+        const last = prefix[prefix.length - 1] as AbnfToken;
+        matches.push({
+          range: new Range(
+            line,
+            token.column,
+            line,
+            last.column + last.text.length,
+          ),
+          markdown: repetitionMarkdown(value, "abnf"),
+        });
+        i = end;
+      }
+    }
+  }
+  return matches;
+}
+
+function isGroupDelimiter(token: AbnfToken): boolean {
+  return (
+    token.kind === AbnfTokenKind.ParenOpen ||
+    token.kind === AbnfTokenKind.ParenClose ||
+    token.kind === AbnfTokenKind.BracketOpen ||
+    token.kind === AbnfTokenKind.BracketClose
+  );
+}
+
+function tokenMatch(
+  line: number,
+  token: AbnfToken,
+  markdown: string,
+): SyntaxMatch {
+  return {
+    range: new Range(
+      line,
+      token.column,
+      line,
+      token.column + token.text.length,
+    ),
+    markdown,
+  };
+}
+
+/**
+ * Returns the index of the last token of a repetition prefix
+ * (`n*m`, `n*`, `*m` or `*`) starting at `start`, or -1 if none.
+ */
+function repetitionEnd(tokens: AbnfToken[], start: number): number {
+  let i = start;
+  if (tokens[i]?.kind === AbnfTokenKind.Integer) {
+    i++;
+  }
+  if (tokens[i]?.kind !== AbnfTokenKind.Asterisk) {
+    return -1;
+  }
+  if (tokens[i + 1]?.kind === AbnfTokenKind.Integer) {
+    i++;
+  }
+  return i;
 }
 
 function collectMatches(

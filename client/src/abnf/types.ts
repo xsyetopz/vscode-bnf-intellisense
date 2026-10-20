@@ -1,5 +1,3 @@
-import type { Range } from "vscode";
-
 /**
  * Token categories emitted by the ABNF lexer.
  */
@@ -100,7 +98,7 @@ export interface AbnfOptional {
 export interface AbnfRulename {
   kind: "rulename";
   name: string;
-  range: Range;
+  token: AbnfToken;
 }
 
 /**

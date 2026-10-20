@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import "../vscode-mock.ts";
+import { repoText } from "../repo-file.ts";
 
 let grammar: typeof import("../../grammar/grammar.ts");
 
@@ -32,7 +33,7 @@ describe("grammar parser", () => {
       ["examples/json.rbnf", "rbnf", "<JSON text>"],
     ] as const;
     for (const [path, dialect, firstRule] of examples) {
-      const doc = grammar.parseGrammar(await Bun.file(path).text(), dialect);
+      const doc = grammar.parseGrammar(repoText(path), dialect);
       expect(doc.rules.length).toBeGreaterThan(10);
       expect(doc.rules[0]?.name).toBe(firstRule);
     }

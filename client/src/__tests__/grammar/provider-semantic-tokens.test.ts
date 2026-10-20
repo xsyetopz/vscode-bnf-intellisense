@@ -131,14 +131,13 @@ describe("grammar semantic tokens provider", () => {
 
     setConfigurationValue("bnf.semanticHighlighting.mode", "auto");
     setConfigurationValue("bnf.semanticHighlighting.maxTokens", 1);
-    expect(
-      (
-        provider.provideDocumentSemanticTokens(
-          asTextDocument(doc),
-          {} as never,
-        ) as unknown as { data: unknown[] }
-      ).data,
-    ).toEqual([]);
+    const reduced = (
+      provider.provideDocumentSemanticTokens(
+        asTextDocument(doc),
+        {} as never,
+      ) as unknown as { data: unknown[] }
+    ).data.length;
+    expect(reduced).toBeGreaterThan(0);
 
     setConfigurationValue("bnf.semanticHighlighting.mode", "on");
     expect(
@@ -148,7 +147,7 @@ describe("grammar semantic tokens provider", () => {
           {} as never,
         ) as unknown as { data: unknown[] }
       ).data.length,
-    ).toBeGreaterThan(1);
+    ).toBeGreaterThan(reduced);
     resetConfigurationValues();
   });
 });

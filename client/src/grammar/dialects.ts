@@ -16,6 +16,11 @@ export interface GrammarDialectDescriptor {
   markdownScopeName: string;
   markdownFence: string;
   assignmentOperator: "=" | "::=";
+  /**
+   * Whether `Name` and `name` are different rule names. ABNF names are
+   * case-insensitive (RFC 5234); W3C EBNF, BNF, and RBNF names are not.
+   */
+  caseSensitiveNames: boolean;
 }
 
 /**
@@ -32,6 +37,7 @@ export const GRAMMAR_DIALECTS = [
     markdownScopeName: "text.html.markdown.abnf.codeblock",
     markdownFence: "abnf",
     assignmentOperator: "=",
+    caseSensitiveNames: false,
   },
   {
     id: "bnf",
@@ -43,6 +49,7 @@ export const GRAMMAR_DIALECTS = [
     markdownScopeName: "text.html.markdown.bnf.codeblock",
     markdownFence: "bnf",
     assignmentOperator: "::=",
+    caseSensitiveNames: true,
   },
   {
     id: "ebnf",
@@ -54,6 +61,7 @@ export const GRAMMAR_DIALECTS = [
     markdownScopeName: "text.html.markdown.ebnf.codeblock",
     markdownFence: "ebnf",
     assignmentOperator: "::=",
+    caseSensitiveNames: true,
   },
   {
     id: "rbnf",
@@ -65,6 +73,7 @@ export const GRAMMAR_DIALECTS = [
     markdownScopeName: "text.html.markdown.rbnf.codeblock",
     markdownFence: "rbnf",
     assignmentOperator: "::=",
+    caseSensitiveNames: true,
   },
 ] as const satisfies readonly GrammarDialectDescriptor[];
 

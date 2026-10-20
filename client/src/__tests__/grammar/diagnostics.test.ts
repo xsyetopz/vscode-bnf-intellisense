@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import "../vscode-mock.ts";
+import { repoText } from "../repo-file.ts";
 
 let grammar: typeof import("../../grammar/grammar.ts");
 let diagnostics: typeof import("../../grammar/diagnostics.ts");
@@ -32,7 +33,7 @@ describe("grammar diagnostics", () => {
   });
 
   test("ignores W3C EBNF character literals in undefined references", async () => {
-    const text = await Bun.file("examples/json.ebnf").text();
+    const text = repoText("examples/json.ebnf");
     const document = grammar.parseGrammar(text, "ebnf");
     const symbolTable = grammar.buildGrammarSymbolTable(document, "ebnf");
     const result = { dialect: "ebnf" as const, document, symbolTable };

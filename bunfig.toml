@@ -1,2 +1,9 @@
+# Bun reads no `.env` file, so no secret of the developer reaches a test, a script, or a hook.
+env = false
+
 [install]
 linker = "isolated"
+
+[test]
+timeout = 5000
+preload = ["./client/src/__tests__/vscode-mock.ts"]

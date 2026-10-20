@@ -1,5 +1,12 @@
+import { parseRuleBody } from "./body-parser.ts";
 import { formatRule } from "./format-renderer.ts";
-import { tokenize } from "./tokenizer.ts";
+import {
+  findRegionEnd,
+  isRuleStart,
+  isTriviaKind,
+  trimRegionEnd,
+} from "./regions.ts";
+import { tokenizeDocument } from "./tokenizer.ts";
 import type { AbnfToken } from "./types.ts";
 import { AbnfTokenKind } from "./types.ts";
 
@@ -31,12 +38,16 @@ export interface RuleBlock {
   kind: "rule";
   name: string;
   operator: "=" | "=/";
-  bodyTokens: AbnfToken[];
+  bodyTokens: readonly AbnfToken[];
+  /** Original source of a rule with parse errors; emitted unchanged. */
+  verbatim?: string;
 }
 
 interface StandaloneComment {
   kind: "comment";
   text: string;
+  /** Keep one blank line before this free-standing indented comment. */
+  blankBefore?: boolean;
 }
 
 type DocumentItem = RuleBlock | StandaloneComment;
@@ -52,201 +63,140 @@ export function formatAbnfDocument(
     return text;
   }
 
-  const tokens = tokenize(text);
-  const items = parseDocumentItems(tokens);
-  const formatted = formatItems(items, config);
+  const tokens = tokenizeDocument(text);
+  const eol =
+    tokens.find((t) => t.kind === AbnfTokenKind.Newline)?.text ?? "\n";
+  const items = parseDocumentItems(text, tokens, eol);
+  const formatted = formatItems(items, config, eol);
 
-  if (config.insertFinalNewline && !formatted.endsWith("\n")) {
-    return `${formatted}\n`;
+  if (config.insertFinalNewline && !/[\r\n]$/.test(formatted)) {
+    return `${formatted}${eol}`;
   }
   return formatted;
 }
 
-interface RuleBodyCollection {
-  bodyTokens: AbnfToken[];
-  nextIndex: number;
+function sourceBetween(
+  text: string,
+  tokens: readonly AbnfToken[],
+  from: number,
+  to: number,
+  eol: string,
+): string {
+  const first = tokens[from];
+  const last = tokens[to - 1];
+  if (first === undefined || last === undefined) {
+    return "";
+  }
+  return text
+    .slice(first.offset, last.offset + last.text.length)
+    .replace(/\r\n|\r|\n/g, eol);
 }
 
-function isNextLineRuleStart(
-  tokens: AbnfToken[],
-  afterNewlineIndex: number,
-): boolean {
-  const wsEnd = skipWhitespace(tokens, afterNewlineIndex);
-  if (
-    wsEnd < tokens.length &&
-    tokens[wsEnd]?.kind === AbnfTokenKind.Rulename &&
-    tokens[wsEnd]?.column === 0
-  ) {
-    const afterName = skipWhitespace(tokens, wsEnd + 1);
-    if (
-      afterName < tokens.length &&
-      (tokens[afterName]?.kind === AbnfTokenKind.DefinedAs ||
-        tokens[afterName]?.kind === AbnfTokenKind.IncrementalAs)
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function isRuleEndAfterComment(tokens: AbnfToken[], pos: number): boolean {
-  if (pos >= tokens.length) {
-    return true;
-  }
-  if (isNextLineRuleStart(tokens, pos)) {
-    return true;
-  }
-  const peek = tokens[pos];
-  if (peek === undefined || peek.kind === AbnfTokenKind.Newline) {
-    return true;
-  }
-  const wsAfter = skipWhitespace(tokens, pos);
-  const afterWs = tokens[wsAfter];
-  if (afterWs?.kind === AbnfTokenKind.Comment && afterWs.column === 0) {
-    return true;
-  }
-  return false;
-}
-
-function handleBodyComment(
-  tokens: AbnfToken[],
-  bodyTokens: AbnfToken[],
-  cur: AbnfToken,
-  i: number,
-): { nextIndex: number; done: boolean } {
-  if (cur.column === 0) {
-    return { nextIndex: i, done: true };
-  }
-  bodyTokens.push(cur);
-  let next = i + 1;
-  next = consumeNewline(tokens, next);
-  return { nextIndex: next, done: isRuleEndAfterComment(tokens, next) };
-}
-
-function collectRuleBody(
-  tokens: AbnfToken[],
-  startIndex: number,
-): RuleBodyCollection {
-  const bodyTokens: AbnfToken[] = [];
-  let i = startIndex;
-
-  while (i < tokens.length) {
-    const cur = tokens[i];
-    if (cur === undefined) {
-      break;
-    }
-
-    if (cur.kind === AbnfTokenKind.Comment) {
-      const result = handleBodyComment(tokens, bodyTokens, cur, i);
-      i = result.nextIndex;
-      if (result.done) {
-        break;
-      }
-      continue;
-    }
-
-    if (cur.kind === AbnfTokenKind.Newline) {
-      i++;
-      if (isNextLineRuleStart(tokens, i)) {
-        break;
-      }
-      bodyTokens.push(cur);
-      continue;
-    }
-
-    bodyTokens.push(cur);
-    i++;
-  }
-
-  return { bodyTokens, nextIndex: i };
-}
-
-interface ParseRuleResult {
-  item: DocumentItem;
-  nextIndex: number;
-}
-
-function parseRuleDefinition(
-  tokens: AbnfToken[],
+function parseRuleItem(
+  text: string,
+  tokens: readonly AbnfToken[],
   ruleStart: number,
-  ruleName: string,
-): ParseRuleResult {
-  let i = ruleStart + 1; // skip rulename token
-  i = skipWhitespace(tokens, i);
-
-  if (i >= tokens.length) {
-    return { item: { kind: "comment", text: ruleName }, nextIndex: i };
-  }
-
-  const opTok = tokens[i];
-  if (opTok === undefined) {
-    return { item: { kind: "comment", text: ruleName }, nextIndex: i };
-  }
-
-  if (
-    opTok.kind !== AbnfTokenKind.DefinedAs &&
-    opTok.kind !== AbnfTokenKind.IncrementalAs
-  ) {
-    const lineText = collectLineText(tokens, ruleStart);
-    return {
-      item: { kind: "comment", text: lineText.text },
-      nextIndex: lineText.nextIndex,
-    };
-  }
-
-  const operator: "=" | "=/" =
-    opTok.kind === AbnfTokenKind.IncrementalAs ? "=/" : "=";
+  eol: string,
+): { item: DocumentItem; nextIndex: number } {
+  const nameTok = tokens[ruleStart] as AbnfToken;
+  let i = skipWhitespace(tokens, ruleStart + 1);
+  const opTok = tokens[i] as AbnfToken;
   i++;
 
-  const collected = collectRuleBody(tokens, i);
-  return {
-    item: {
-      kind: "rule",
-      name: ruleName,
-      operator,
-      bodyTokens: collected.bodyTokens,
-    },
-    nextIndex: collected.nextIndex,
+  const regionEnd = findRegionEnd(tokens, i);
+  const bodyEnd = trimRegionEnd(tokens, i, regionEnd);
+  const bodyTokens = tokens.slice(i, bodyEnd);
+  const hasErrors = parseRuleBody(bodyTokens).issues.some(
+    (issue) => issue.severity === "error",
+  );
+  const rule: RuleBlock = {
+    kind: "rule",
+    name: nameTok.text,
+    operator: opTok.kind === AbnfTokenKind.IncrementalAs ? "=/" : "=",
+    bodyTokens,
   };
+  if (hasErrors) {
+    rule.verbatim = sourceBetween(text, tokens, ruleStart, bodyEnd, eol);
+  }
+  return { item: rule, nextIndex: bodyEnd };
 }
 
-function parseDocumentItems(tokens: AbnfToken[]): DocumentItem[] {
+function parseDocumentItems(
+  text: string,
+  tokens: readonly AbnfToken[],
+  eol: string,
+): DocumentItem[] {
   const items: DocumentItem[] = [];
   let i = 0;
 
   while (i < tokens.length) {
-    i = skipBlankLines(tokens, i);
-    if (i >= tokens.length) {
-      break;
-    }
+    const tok = tokens[i] as AbnfToken;
 
-    const tok = tokens[i];
-    if (tok === undefined) {
-      break;
+    if (tok.kind === AbnfTokenKind.Newline) {
+      i++;
+      continue;
     }
-
     if (tok.kind === AbnfTokenKind.Comment) {
       items.push({ kind: "comment", text: tok.text });
       i++;
-      i = consumeNewline(tokens, i);
+      continue;
+    }
+    const first = tok.kind === AbnfTokenKind.Whitespace ? i + 1 : i;
+    const firstTok = tokens[first];
+    if (
+      first > i &&
+      firstTok?.kind === AbnfTokenKind.Comment &&
+      items.length > 0
+    ) {
+      // An indented comment after a blank line stays indented and keeps the
+      // blank line, so it never becomes the next rule's doc comment.
+      items.push({
+        kind: "comment",
+        text: `${tok.text}${firstTok.text}`,
+        blankBefore: isBlankLineBefore(tokens, i),
+      });
+      i = first + 1;
+      continue;
+    }
+    if (firstTok === undefined || isTriviaKind(firstTok.kind)) {
+      i = first;
       continue;
     }
 
-    if (tok.kind === AbnfTokenKind.Rulename) {
-      const result = parseRuleDefinition(tokens, i, tok.text);
+    if (first === i && isRuleStart(tokens, i)) {
+      const result = parseRuleItem(text, tokens, i, eol);
       items.push(result.item);
       i = result.nextIndex;
       continue;
     }
 
-    // Skip unknown or whitespace tokens at top level
-    i++;
+    // Not a rule: keep the lines exactly as written, never drop tokens.
+    const end = trimRegionEnd(tokens, i, findRegionEnd(tokens, i));
+    items.push({
+      kind: "comment",
+      text: sourceBetween(text, tokens, i, end, eol),
+    });
+    i = end;
   }
 
   return items;
 }
 
-function skipWhitespace(tokens: AbnfToken[], start: number): number {
+function isBlankLineBefore(
+  tokens: readonly AbnfToken[],
+  index: number,
+): boolean {
+  if (tokens[index - 1]?.kind !== AbnfTokenKind.Newline) {
+    return false;
+  }
+  let k = index - 2;
+  while (k >= 0 && tokens[k]?.kind === AbnfTokenKind.Whitespace) {
+    k--;
+  }
+  return tokens[k]?.kind === AbnfTokenKind.Newline;
+}
+
+function skipWhitespace(tokens: readonly AbnfToken[], start: number): number {
   let pos = start;
   while (
     pos < tokens.length &&
@@ -257,71 +207,20 @@ function skipWhitespace(tokens: AbnfToken[], start: number): number {
   return pos;
 }
 
-function skipBlankLines(tokens: AbnfToken[], start: number): number {
-  let pos = start;
-  while (pos < tokens.length) {
-    const tok = tokens[pos];
-    if (tok === undefined) {
-      break;
-    }
-    if (tok.kind === AbnfTokenKind.Newline) {
-      pos++;
-      continue;
-    }
-    if (tok.kind === AbnfTokenKind.Whitespace) {
-      pos++;
-      continue;
-    }
-    break;
-  }
-  return pos;
-}
-
-function consumeNewline(tokens: AbnfToken[], start: number): number {
-  if (start < tokens.length && tokens[start]?.kind === AbnfTokenKind.Newline) {
-    return start + 1;
-  }
-  return start;
-}
-
-interface LineCollectionResult {
-  text: string;
-  nextIndex: number;
-}
-
-function collectLineText(
-  tokens: AbnfToken[],
-  start: number,
-): LineCollectionResult {
-  let text = "";
-  let i = start;
-  while (i < tokens.length) {
-    const t = tokens[i];
-    if (t === undefined || t.kind === AbnfTokenKind.Newline) {
-      break;
-    }
-    text += t.text;
-    i++;
-  }
-  if (i < tokens.length && tokens[i]?.kind === AbnfTokenKind.Newline) {
-    i++;
-  }
-  return { text, nextIndex: i };
-}
-
 function formatItems(
   items: DocumentItem[],
   config: AbnfFormatterConfig,
+  eol: string,
 ): string {
   const groups = groupConsecutiveRules(items);
   const outputParts: string[] = [];
 
   for (const group of groups) {
-    const groupLines = formatGroup(group, config);
+    const groupLines = formatGroup(group, config, eol);
     outputParts.push(groupLines);
   }
 
-  return outputParts.join("\n");
+  return outputParts.join(eol);
 }
 
 type DocumentGroup = DocumentItem[];
@@ -362,20 +261,28 @@ function calculateNameWidth(ruleBlocks: RuleBlock[]): number {
 function formatGroup(
   group: DocumentGroup,
   config: AbnfFormatterConfig,
+  eol: string,
 ): string {
   const lines: string[] = [];
 
   const first = group[0];
   if (group.length === 1 && first?.kind === "comment") {
+    if (first.blankBefore) {
+      lines.push("");
+    }
     lines.push(first.text);
-    return lines.join("\n");
+    return lines.join(eol);
   }
 
   const ruleBlocks = group.filter(
     (item): item is RuleBlock => item.kind !== "comment",
   );
 
-  const nameWidth = config.alignEquals ? calculateNameWidth(ruleBlocks) : 0;
+  const nameWidth = config.alignEquals
+    ? calculateNameWidth(
+        ruleBlocks.filter((rule) => rule.verbatim === undefined),
+      )
+    : 0;
   const blankLines = Math.max(0, Math.floor(config.blankLinesBetweenRules));
 
   for (let i = 0; i < ruleBlocks.length; i++) {
@@ -384,7 +291,7 @@ function formatGroup(
       continue;
     }
 
-    const ruleText = formatRule(rule, nameWidth, config);
+    const ruleText = rule.verbatim ?? formatRule(rule, nameWidth, config, eol);
     if (i > 0) {
       for (let b = 0; b < blankLines; b++) {
         lines.push("");
@@ -393,5 +300,5 @@ function formatGroup(
     lines.push(ruleText);
   }
 
-  return lines.join("\n");
+  return lines.join(eol);
 }

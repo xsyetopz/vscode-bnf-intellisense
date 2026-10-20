@@ -3,7 +3,7 @@
   "type": "module",
   "displayName": "BNF-family Syntax Highlighting and Intellisense",
   "description": "Edit ABNF, BNF, W3C XML EBNF, and RBNF files with highlighting, navigation, diagnostics, formatting, and snippets.",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "author": {
     "name": "xsyetopz"
   },
@@ -45,9 +45,9 @@
     "color": "#0d1b2a",
     "theme": "dark"
   },
-  "main": "./dist/extension.js",
+  "main": "./dist/extension.cjs",
   "engines": {
-    "vscode": "^1.75.0"
+    "vscode": "^1.91.0"
   },
   "contributes": {
     "languages": [
@@ -60,7 +60,7 @@
         "extensions": [
           ".abnf"
         ],
-        "configuration": "bnf-language-configuration.json",
+        "configuration": "abnf-language-configuration.json",
         "icon": {
           "light": "assets/logo.png",
           "dark": "assets/logo.png"
@@ -90,7 +90,7 @@
         "extensions": [
           ".ebnf"
         ],
-        "configuration": "bnf-language-configuration.json",
+        "configuration": "ebnf-language-configuration.json",
         "icon": {
           "light": "assets/logo.png",
           "dark": "assets/logo.png"
@@ -196,31 +196,115 @@
       "title": "BNF IntelliSense",
       "properties": {
         "bnf.diagnostics.enable": {
+          "scope": "language-overridable",
           "type": "boolean",
           "default": true,
           "description": "Show parser and rule diagnostics for ABNF, BNF, EBNF, and RBNF files."
         },
         "bnf.diagnostics.unusedRules": {
+          "scope": "language-overridable",
           "type": "boolean",
           "default": true,
           "description": "Show a hint when a rule is not referenced by another rule."
         },
         "bnf.diagnostics.undefinedReferences": {
+          "scope": "language-overridable",
           "type": "boolean",
           "default": true,
           "description": "Show an error when a rule reference has no definition in the file."
         },
+        "bnf.diagnostics.leftRecursion": {
+          "scope": "language-overridable",
+          "type": "string",
+          "enum": [
+            "off",
+            "hint",
+            "information",
+            "warning",
+            "error"
+          ],
+          "default": "hint",
+          "description": "Severity for rules that are directly or indirectly left-recursive. The message shows the cycle. Use \"off\" to disable."
+        },
+        "bnf.diagnostics.unproductiveRules": {
+          "scope": "language-overridable",
+          "type": "string",
+          "enum": [
+            "off",
+            "hint",
+            "information",
+            "warning",
+            "error"
+          ],
+          "default": "warning",
+          "description": "Severity for rules that can never derive a terminal string, such as rules whose every alternative needs a non-terminating rule."
+        },
+        "bnf.diagnostics.unreachableRules": {
+          "scope": "language-overridable",
+          "type": "string",
+          "enum": [
+            "off",
+            "hint",
+            "information",
+            "warning",
+            "error"
+          ],
+          "default": "information",
+          "description": "Severity for referenced rules that cannot be reached from the start rule (the first rule). Rules nothing references are covered by the unused-rules hint."
+        },
+        "bnf.diagnostics.duplicateAlternatives": {
+          "scope": "language-overridable",
+          "type": "string",
+          "enum": [
+            "off",
+            "hint",
+            "information",
+            "warning",
+            "error"
+          ],
+          "default": "warning",
+          "description": "Severity for identical alternatives inside one choice."
+        },
+        "bnf.diagnostics.emptyAlternatives": {
+          "scope": "language-overridable",
+          "type": "string",
+          "enum": [
+            "off",
+            "hint",
+            "information",
+            "warning",
+            "error"
+          ],
+          "default": "hint",
+          "description": "Severity for alternatives that match only the empty string, such as a leading or trailing separator."
+        },
+        "bnf.diagnostics.didYouMean": {
+          "scope": "language-overridable",
+          "type": "boolean",
+          "default": true,
+          "description": "Suggest the closest defined rule (including case and angle-bracket mismatches) on undefined references."
+        },
+        "bnf.diagnostics.caseSensitiveStrings": {
+          "scope": "language-overridable",
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "ABNF only. Show a hint on quoted strings with uppercase letters, which also match other letter cases (RFC 5234). The quick fix rewrites them as case-sensitive `%s\"...\"` (RFC 7405)."
+        },
         "bnf.formatting.alignEquals": {
+          "scope": "language-overridable",
           "type": "boolean",
           "default": true,
           "description": "Align assignment operators across consecutive rule definitions."
         },
         "bnf.formatting.continuationIndent": {
+          "scope": "language-overridable",
           "type": "number",
           "default": 4,
+          "minimum": 1,
           "description": "Number of spaces to indent wrapped rule-body lines."
         },
         "bnf.formatting.alternativeIndent": {
+          "scope": "language-overridable",
           "type": "string",
           "enum": [
             "align",
@@ -234,11 +318,13 @@
           "description": "Choose how formatter indents alternatives on continuation lines."
         },
         "bnf.formatting.blankLinesBetweenRules": {
+          "scope": "language-overridable",
           "type": "number",
           "default": 1,
           "description": "Number of blank lines the formatter keeps between rule definitions."
         },
         "bnf.formatting.breakAlternatives": {
+          "scope": "language-overridable",
           "type": "string",
           "enum": [
             "always",
@@ -254,61 +340,79 @@
           "description": "Choose when formatter breaks top-level alternatives onto separate lines."
         },
         "bnf.formatting.maxLineLength": {
+          "scope": "language-overridable",
           "type": "number",
           "default": 80,
           "description": "Wrap rule bodies after this column. Use 0 to disable wrapping."
         },
         "bnf.formatting.alignProductionNumbers": {
+          "scope": "language-overridable",
           "type": "boolean",
           "default": true,
           "description": "Align EBNF production numbers, such as [1], with rule names."
         },
         "bnf.formatting.preserveCommentSpacing": {
+          "scope": "language-overridable",
           "type": "boolean",
           "default": true,
           "description": "Keep blank-line spacing around standalone comments when formatting."
         },
         "bnf.formatting.trimTrailingBlankLines": {
+          "scope": "language-overridable",
           "type": "boolean",
           "default": true,
           "description": "Remove extra blank lines at the end of the file before final-newline handling."
         },
         "bnf.formatting.preserveContinuationLineBreaks": {
+          "scope": "language-overridable",
           "type": "boolean",
           "default": false,
           "description": "Keep existing indented continuation line breaks instead of reflowing them."
         },
         "bnf.formatting.spaceBeforeInlineComment": {
+          "scope": "language-overridable",
           "type": "number",
           "default": 2,
           "description": "Number of spaces before inline semicolon comments in rule bodies."
         },
         "bnf.formatting.insertFinalNewline": {
+          "scope": "language-overridable",
           "type": "boolean",
           "default": true,
           "description": "End formatted files with one final newline."
         },
+        "bnf.codeLens.references": {
+          "scope": "language-overridable",
+          "type": "boolean",
+          "default": true,
+          "description": "Show a code lens with the number of references above each rule definition."
+        },
         "bnf.inlayHints.referenceCount": {
+          "scope": "language-overridable",
           "type": "boolean",
           "default": false,
           "description": "Show an inlay hint with the number of references after each rule name."
         },
         "bnf.inlayHints.recursion": {
+          "scope": "language-overridable",
           "type": "boolean",
           "default": false,
           "description": "Show an inlay hint on rules that reference themselves directly."
         },
         "bnf.inlayHints.unusedMarker": {
+          "scope": "language-overridable",
           "type": "boolean",
           "default": false,
           "description": "Show an inlay hint on rules with no references."
         },
         "bnf.inlayHints.syntaxDetails": {
+          "scope": "language-overridable",
           "type": "boolean",
           "default": false,
           "description": "Show inlay hints for syntax details such as repetitions and terminals."
         },
         "bnf.semanticHighlighting.mode": {
+          "scope": "language-overridable",
           "type": "string",
           "enum": [
             "auto",
@@ -317,43 +421,103 @@
           ],
           "default": "auto",
           "enumDescriptions": [
-            "Use semantic tokens until the file exceeds bnf.semanticHighlighting.maxTokens",
+            "Use full semantic tokens until the file exceeds bnf.semanticHighlighting.maxTokens, then only rule names and references",
             "Always use semantic tokens",
             "Use TextMate grammar highlighting only"
           ],
           "description": "Choose whether grammar files use semantic highlighting."
         },
         "bnf.semanticHighlighting.maxTokens": {
+          "scope": "language-overridable",
           "type": "number",
           "default": 20000,
           "minimum": 0,
-          "description": "Maximum semantic tokens in auto mode before TextMate fallback. Use 0 for no limit."
+          "description": "Maximum semantic tokens in auto mode before dropping operators, strings, numbers, and comments (TextMate highlights those) and keeping only rule names and references. Use 0 for no limit."
         }
       }
+    },
+    "commands": [
+      {
+        "command": "bnf.sortRules",
+        "title": "Sort Rules Alphabetically",
+        "category": "BNF"
+      },
+      {
+        "command": "bnf.sortRulesByDependency",
+        "title": "Sort Rules by Dependency",
+        "category": "BNF"
+      },
+      {
+        "command": "bnf.convertDialect",
+        "title": "Convert to Another Dialect...",
+        "category": "BNF"
+      },
+      {
+        "command": "bnf.showRailroadDiagram",
+        "title": "Show Railroad Diagram",
+        "category": "BNF",
+        "icon": "$(type-hierarchy)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "bnf.sortRules",
+          "when": "editorLangId =~ /^(abnf|bnf|ebnf|rbnf)$/"
+        },
+        {
+          "command": "bnf.sortRulesByDependency",
+          "when": "editorLangId =~ /^(abnf|bnf|ebnf|rbnf)$/"
+        },
+        {
+          "command": "bnf.convertDialect",
+          "when": "editorLangId =~ /^(abnf|bnf|ebnf|rbnf)$/"
+        },
+        {
+          "command": "bnf.showRailroadDiagram",
+          "when": "editorLangId =~ /^(abnf|bnf|ebnf|rbnf)$/ || activeWebviewPanelId == 'bnf.railroad'"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "bnf.showRailroadDiagram",
+          "when": "editorLangId =~ /^(abnf|bnf|ebnf|rbnf)$/",
+          "group": "navigation"
+        }
+      ]
     }
   },
   "scripts": {
-    "build": "bun build ./client/src/main.ts --outfile=./dist/extension.js --external vscode --target=node",
+    "bench": "bun --preload ./client/src/__tests__/vscode-mock.ts client/src/bench/bench.ts",
     "biome:check": "bunx biome check . --max-diagnostics 16384",
     "biome:format": "bunx biome format . --write --max-diagnostics 16384",
     "biome:lint": "bunx biome lint . --write --max-diagnostics 16384",
-    "hooks:install": "git config core.hooksPath .githooks",
+    "build": "bun build ./client/src/main.ts --outdir=./dist --entry-naming=extension.cjs --external vscode --target=node --format=cjs --minify --sourcemap=linked",
+    "verify": "bun run --parallel biome:check md:check typecheck",
+    "md:check": "markdownlint-cli2",
+    "md:fix": "markdownlint-cli2 --fix",
     "package": "bun run build && vsce package",
+    "prepare": "lefthook install",
     "test": "bun test",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "bun check",
     "vscode:prepublish": "bun run build"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.10",
-    "@types/bun": "^1.4.0",
-    "@types/node": "^26.4.0",
-    "@types/vscode": "^1.75.0",
-    "@vscode/vsce": "^3.9.2",
-    "typescript": "^7.0.2"
+    "@biomejs/biome": "^2.5.15",
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "@commitlint/types": "^21.2.3",
+    "@types/bun": "^1.4.3",
+    "@types/vscode": "~1.91.0",
+    "@vscode/vsce": "^4.0.0",
+    "lefthook": "^2.2.2",
+    "markdownlint-cli2": "^0.23.3"
   },
   "trustedDependencies": [
     "@biomejs/biome",
     "@vscode/vsce-sign",
-    "keytar"
-  ]
+    "keytar",
+    "lefthook"
+  ],
+  "packageManager": "bun@1.4.3"
 }

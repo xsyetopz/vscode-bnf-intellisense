@@ -1,0 +1,19 @@
+# Re-review of the task 4.1 fixes: NOT READY
+
+All checks pass: biome, typecheck, `bun test` (2550 pass), and `BENCH_SIZES=500,2000 bun run bench` (growth 3.1x-5.8x for a 4x input). Repros: reopen gives 3 then 3 (the repro calls only removeDocument, so this is expected, see the stale-parse section); concurrent reads give defs 1 and search 1, so #2 is fixed. Findings #1-#18 and the push-spread list are addressed. The sites still using push-spread are the ones the review classed as bounded. Every file is under 800 lines and imports are explicit `.ts`.
+
+## New or remaining findings
+1. MEDIUM, workspace-exclude.ts:40-44. A one-alternative group such as `"**/{build}": true` is kept literally, then nested inside the outer `{…}` at :87. The scan rejects ("nested alternates are not supported") and the index stays empty. Reproduced. Fix: when the group has no comma but a matching `}`, expand it to its contents. Add a test.
+2. LOW, workspace-exclude.ts:26-39. Escaped braces are mangled: `**/\{a,b\}` becomes `**/\a`, `**/\b\`. Fix: skip the character after `\` while scanning, and keep the escape in the output.
+3. LOW, workspace-exclude.ts:90-111. `globToRegExp` escapes `[...]`, so `**/[ab]uild/**` hides files from the scan but not from watcher creates. Reproduced: a created `/w/build/z.abnf` is indexed. Fix: translate `[...]` and `[!...]` into regex classes.
+4. LOW, workspace.ts:96-107. With nested workspace folders (`/w` and `/w/sub`), the `/w` scan indexes `/w/sub/out/x.abnf` even though `sub` excludes its root `out`. Reproduced. Fix: filter the scan results with `isExcluded(uri)`.
+5. LOW, workspace.ts:310-318. On a change event the entry is removed before the read, so lookups miss the file during the read and `onDidChangeIndex` fires twice. Fix: rely on the remove-before-add at :271, and remove only in the `catch` (when the generation still matches) or when the file is excluded.
+6. LOW, workspace.ts:114-128. An excluded file the user opens is indexed while it is open. Its diagnostics are right, but other files' definitions and symbol search point into node_modules or vendor. Fix: in `syncOpenDocument`, skip index add/remove when `isExcluded(doc.uri)`, but keep parsing. Add a test that the file still gets diagnostics but is not indexed.
+7. LOW, extension.ts:77. A `files.exclude` change is never applied until reload. Fix: when `affectsConfiguration("files.exclude")`, drop and re-index the affected files, or document it.
+8. LOW, workspace.ts:74. `#generations` keeps one entry per URI ever seen, including deleted files. Fix: delete the entry in the delete path.
+9. LOW, recent-cache.ts:51. The comment "beyond its newest entry" is wrong: the budget includes the newest entry. Fix the wording.
+10. LOW (test quality), provider-semantic-tokens-large.test.ts:151-159. The "disposed provider" test only asserts `not.toThrow`, which passes without dispose too. Fix: assert that the mock's close-listener count drops, or delete the test. :143's comment "closes the parse cache entry" is implementation prose; drop it.
+11. LOW (test quality), workspace-indexing.test.ts:268, 284, workspace-exclusions.test.ts:180. Fixed `Bun.sleep(20)` waits; use `eventually(...)`. :275: the scan read is not gated, so the close-during-scan race is not reliably exercised; gate it with `readFileGate`.
+
+## Stale parse on a same-version reopen (implementer's concern)
+No real path hits it. `#indexFile` writes only `#fileData` and `#index`, never `#parseCache` or the semantic memo, so a disk re-read cannot collide with version 1 of a reopened document. extension.ts:86-88 always calls `removeDocument` on close, which clears `#parseCache` and with it the `getTokens` cache. The semantic memo clears itself on the same close event (semantic-tokens.ts:82). The memo also checks `languageId`, so a language-mode switch is covered. Optional hardening: let `GrammarWorkspace` subscribe to `onDidCloseTextDocument` itself.

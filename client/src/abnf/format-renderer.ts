@@ -5,7 +5,7 @@ import { AbnfTokenKind } from "./types.ts";
 type BodyAtom = { kind: "token"; tok: AbnfToken } | { kind: "hardBreak" };
 
 function isContinuationNewline(
-  bodyTokens: AbnfToken[],
+  bodyTokens: readonly AbnfToken[],
   newlineIndex: number,
 ): boolean {
   const next = bodyTokens[newlineIndex + 1];
@@ -17,7 +17,7 @@ function isContinuationNewline(
 }
 
 function buildBodyAtoms(
-  bodyTokens: AbnfToken[],
+  bodyTokens: readonly AbnfToken[],
   config: AbnfFormatterConfig,
 ): BodyAtom[] {
   const atoms: BodyAtom[] = [];
@@ -43,6 +43,10 @@ function buildBodyAtoms(
     }
 
     if (tok.kind === AbnfTokenKind.Comment) {
+      // A comment alone on its line stays on its own line.
+      if (atoms.length > 0 && isOwnLine(bodyTokens, i)) {
+        pushHardBreak(atoms);
+      }
       atoms.push({ kind: "token", tok });
       // ABNF comments end the line; if more tokens follow, they must start on a continuation line.
       atoms.push({ kind: "hardBreak" });
@@ -57,6 +61,20 @@ function buildBodyAtoms(
   }
 
   return atoms;
+}
+
+function isOwnLine(tokens: readonly AbnfToken[], index: number): boolean {
+  let j = index - 1;
+  while (j >= 0 && tokens[j]?.kind === AbnfTokenKind.Whitespace) {
+    j--;
+  }
+  return j >= 0 && tokens[j]?.kind === AbnfTokenKind.Newline;
+}
+
+function pushHardBreak(atoms: BodyAtom[]): void {
+  if (atoms[atoms.length - 1]?.kind !== "hardBreak") {
+    atoms.push({ kind: "hardBreak" });
+  }
 }
 
 function containsHardBreak(atoms: BodyAtom[]): boolean {
@@ -220,9 +238,11 @@ function computeRuleIndents(
   definitionPrefix: string,
   config: AbnfFormatterConfig,
 ): { bodyIndent: string; altContinuationIndent: string } {
-  const continuationIndent = " ".repeat(
-    Math.max(0, Math.floor(config.continuationIndent)),
-  );
+  // Continuation lines must be indented, or they would start a new rule.
+  const width = Number.isFinite(config.continuationIndent)
+    ? Math.max(1, Math.floor(config.continuationIndent))
+    : 4;
+  const continuationIndent = " ".repeat(width);
 
   const bodyIndent =
     config.alternativeIndent === "align"
@@ -320,6 +340,10 @@ function formatRuleBodyLines(
 
     const logicalLines = splitHardBreakLines(altAtoms);
     if (logicalLines.length === 0) {
+      // An empty alternative still carries its "/" (or the bare definition).
+      outLines.push(
+        altIndex === 0 ? definitionPrefix.trimEnd() : `${bodyIndent}/`,
+      );
       continue;
     }
 
@@ -342,6 +366,7 @@ export function formatRule(
   rule: RuleBlock,
   nameWidth: number,
   config: AbnfFormatterConfig,
+  eol = "\n",
 ): string {
   const definitionPrefix = buildDefinitionPrefix(rule, nameWidth, config);
 
@@ -361,7 +386,7 @@ export function formatRule(
     definitionPrefix,
     bodyIndent,
     altContinuationIndent,
-  ).join("\n");
+  ).join(eol);
 }
 
 interface TokenRender {
@@ -440,9 +465,12 @@ function renderTokens(
     }
 
     if (tok.kind === AbnfTokenKind.Comment) {
-      const spaces = " ".repeat(
-        Math.max(0, Math.floor(config.spaceBeforeInlineComment)),
-      );
+      const spaces =
+        out === ""
+          ? ""
+          : " ".repeat(
+              Math.max(0, Math.floor(config.spaceBeforeInlineComment)),
+            );
       out += `${spaces}${tok.text}`;
       break;
     }
@@ -458,7 +486,7 @@ function renderTokens(
   return out;
 }
 
-function buildTokenRenders(tokens: AbnfToken[]): TokenRender[] {
+function buildTokenRenders(tokens: readonly AbnfToken[]): TokenRender[] {
   const renders: TokenRender[] = [];
   let prev: AbnfToken | null = null;
 
@@ -486,7 +514,7 @@ function findLastBreakIndex(tokens: TokenRender[]): number | null {
 }
 
 function renderTokensWrapped(
-  tokens: AbnfToken[],
+  tokens: readonly AbnfToken[],
   config: AbnfFormatterConfig,
   firstPrefix: string,
   wrapPrefix: string,

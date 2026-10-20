@@ -7,19 +7,14 @@ import type { GrammarWorkspace } from "../workspace.ts";
  * Resolved grammar word and symbol context at a document position.
  */
 export interface WordLookup {
+  /** Normalized lookup key (lowercased only for case-insensitive dialects). */
   word: string;
+  /** Name exactly as written in the document. */
+  text: string;
   wordRange: Range;
   symbolTable: SymbolTable;
   dialect: GrammarDialect;
 }
-
-/**
- * Fallback single-word identifier pattern for grammar lookups.
- */
-export const IDENTIFIER_PATTERN = /[a-zA-Z][a-zA-Z0-9-]*/;
-
-const EBNF_CHAR_CLASS_RE = /\[(?:\^)?[^\]\r\n]*\]/g;
-const EBNF_CHAR_CODE_RE = /#x[0-9A-Fa-f]+/g;
 
 /**
  * Finds the grammar symbol under a VS Code document position.
@@ -29,31 +24,13 @@ export function getWordLookup(
   position: Position,
   grammarWorkspace: GrammarWorkspace,
 ): WordLookup | undefined {
-  const spacedResult = findSpacedIdentifierRange(
-    doc,
-    position,
-    grammarWorkspace,
-  );
-  if (spacedResult) {
-    spacedResult.word = normalizeSymbolName(
-      spacedResult.word,
-      spacedResult.dialect,
-    );
-    return spacedResult;
-  }
-
-  if (isEbnfCharacterSyntax(doc, position)) {
+  // Only parsed rule names and references count. Words inside comments and
+  // strings are never symbols, and names may contain "_", ".", and ":".
+  const found = findSymbolAtPosition(doc, position, grammarWorkspace);
+  if (!found) {
     return undefined;
   }
-
-  const wordRange = doc.getWordRangeAtPosition(position, IDENTIFIER_PATTERN);
-  if (!wordRange) {
-    return undefined;
-  }
-
-  const { dialect, symbolTable } = grammarWorkspace.get(doc);
-  const word = normalizeSymbolName(doc.getText(wordRange), dialect);
-  return { word, wordRange, symbolTable, dialect };
+  return { ...found, word: normalizeSymbolName(found.text, found.dialect) };
 }
 
 function positionInRange(pos: Position, range: Range): boolean {
@@ -69,13 +46,13 @@ function positionInRange(pos: Position, range: Range): boolean {
   return true;
 }
 
-function findSpacedIdentifierRange(
+function findSymbolAtPosition(
   doc: TextDocument,
   position: Position,
   grammarWorkspace: GrammarWorkspace,
 ):
   | {
-      word: string;
+      text: string;
       wordRange: Range;
       symbolTable: SymbolTable;
       dialect: GrammarDialect;
@@ -90,7 +67,7 @@ function findSpacedIdentifierRange(
   for (const rule of grammarDoc.rules) {
     if (positionInRange(position, rule.nameRange)) {
       return {
-        word: rule.name,
+        text: rule.name,
         wordRange: rule.nameRange,
         symbolTable,
         dialect,
@@ -99,7 +76,7 @@ function findSpacedIdentifierRange(
     for (const ref of rule.references) {
       if (positionInRange(position, ref.range)) {
         return {
-          word: ref.name,
+          text: ref.name,
           wordRange: ref.range,
           symbolTable,
           dialect,
@@ -109,30 +86,4 @@ function findSpacedIdentifierRange(
   }
 
   return undefined;
-}
-
-function isEbnfCharacterSyntax(doc: TextDocument, position: Position): boolean {
-  if (doc.languageId !== "ebnf") {
-    return false;
-  }
-  const line = doc.lineAt(position.line).text;
-  return (
-    containsPosition(line, position.character, EBNF_CHAR_CLASS_RE) ||
-    containsPosition(line, position.character, EBNF_CHAR_CODE_RE)
-  );
-}
-
-function containsPosition(
-  line: string,
-  character: number,
-  pattern: RegExp,
-): boolean {
-  for (const match of line.matchAll(pattern)) {
-    const start = match.index ?? 0;
-    const end = start + (match[0] ?? "").length;
-    if (character >= start && character <= end) {
-      return true;
-    }
-  }
-  return false;
 }

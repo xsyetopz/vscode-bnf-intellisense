@@ -45,14 +45,20 @@
       "begin": "(\\\")",
       "beginCaptures": { "1": { "name": "punctuation.definition.string.begin.bnf" } },
       "end": "(\\\")|(?=\\n)",
-      "endCaptures": { "1": { "name": "punctuation.definition.string.end.bnf" } }
+      "endCaptures": { "1": { "name": "punctuation.definition.string.end.bnf" } },
+      "patterns": [ { "include": "#string-escape" } ]
     },
     "single-string": {
       "name": "string.quoted.single.bnf",
       "begin": "(')",
       "beginCaptures": { "1": { "name": "punctuation.definition.string.begin.bnf" } },
       "end": "(')|(?=\\n)",
-      "endCaptures": { "1": { "name": "punctuation.definition.string.end.bnf" } }
+      "endCaptures": { "1": { "name": "punctuation.definition.string.end.bnf" } },
+      "patterns": [ { "include": "#string-escape" } ]
+    },
+    "string-escape": {
+      "name": "constant.character.escape.bnf",
+      "match": "\\\\(?:x[0-9A-Fa-f]{2}|.)"
     },
     "alternation": {
       "name": "keyword.operator.alternation.bnf",
@@ -68,7 +74,7 @@
     },
     "identifier": {
       "name": "variable.other.rule.bnf",
-      "match": "<[^<>\\r\\n]+>|[A-Za-z_][A-Za-z0-9_.:-]*"
+      "match": "<[^<>\\r\\n]+>|[A-Za-z_][A-Za-z0-9_.:-]*(?<![.:-])"
     }
   }
 }

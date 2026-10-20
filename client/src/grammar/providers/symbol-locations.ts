@@ -1,4 +1,5 @@
 import { DocumentHighlight, DocumentHighlightKind, Location } from "vscode";
+import type { Rule } from "../../types.ts";
 import type { GrammarDialect } from "../dialects.ts";
 import type { GrammarWorkspace } from "../workspace.ts";
 
@@ -60,6 +61,41 @@ export function collectWorkspaceSymbolLocations(
 }
 
 /**
+ * One rule definition together with the document that holds it.
+ */
+export interface WorkspaceDefinition {
+  uri: Location["uri"];
+  rule: Rule;
+}
+
+/**
+ * Collects rule definitions across the current workspace for one dialect. The
+ * current document comes first, then the other indexed files.
+ */
+export function collectWorkspaceDefinitions(
+  workspace: GrammarWorkspace,
+  word: string,
+  dialect: GrammarDialect,
+  currentUri: string,
+  currentSymbolTable: SymbolTable,
+  currentDocumentUri: Location["uri"],
+): WorkspaceDefinition[] {
+  const definitions: WorkspaceDefinition[] = [];
+  for (const rule of currentSymbolTable.definitions.get(word) ?? []) {
+    definitions.push({ uri: currentDocumentUri, rule });
+  }
+  for (const file of workspace.getAllFiles(dialect)) {
+    if (file.uri.toString() === currentUri) {
+      continue;
+    }
+    for (const rule of file.symbolTable.definitions.get(word) ?? []) {
+      definitions.push({ uri: file.uri, rule });
+    }
+  }
+  return definitions;
+}
+
+/**
  * Collects definition locations across the current workspace for one dialect.
  */
 export function collectWorkspaceDefinitionLocations(
@@ -70,19 +106,14 @@ export function collectWorkspaceDefinitionLocations(
   currentSymbolTable: SymbolTable,
   currentDocumentUri: Location["uri"],
 ): Location[] {
-  const locations: Location[] = [];
-  for (const rule of currentSymbolTable.definitions.get(word) ?? []) {
-    locations.push(new Location(currentDocumentUri, rule.nameRange));
-  }
-  for (const file of workspace.getAllFiles(dialect)) {
-    if (file.uri.toString() === currentUri) {
-      continue;
-    }
-    for (const rule of file.symbolTable.definitions.get(word) ?? []) {
-      locations.push(new Location(file.uri, rule.nameRange));
-    }
-  }
-  return locations;
+  return collectWorkspaceDefinitions(
+    workspace,
+    word,
+    dialect,
+    currentUri,
+    currentSymbolTable,
+    currentDocumentUri,
+  ).map(({ uri, rule }) => new Location(uri, rule.nameRange));
 }
 
 /**

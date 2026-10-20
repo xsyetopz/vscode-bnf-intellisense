@@ -5,16 +5,52 @@ import type {
   Rule,
   SymbolTable,
 } from "../types.ts";
-import type { GrammarDialect } from "./dialects.ts";
+import {
+  type GrammarDialect,
+  getGrammarDialectDescriptor,
+} from "./dialects.ts";
 
 /**
- * Normalizes rule names for dialect-specific lookup keys.
+ * Normalizes rule names for dialect-specific lookup keys. ABNF names are
+ * case-insensitive; W3C EBNF, BNF, and RBNF names are case-sensitive.
  */
 export function normalizeSymbolName(
   name: string,
-  _dialect: GrammarDialect,
+  dialect: GrammarDialect,
 ): string {
-  return name.toLowerCase();
+  return getGrammarDialectDescriptor(dialect).caseSensitiveNames
+    ? name
+    : name.toLowerCase();
+}
+
+/**
+ * Collects the keys of rules that are referenced from a different rule.
+ * A rule that only refers to itself is not counted as used.
+ */
+export function externallyReferencedKeys(
+  doc: GrammarDocument,
+  dialect: GrammarDialect,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const rule of doc.rules) {
+    const own = normalizeSymbolName(rule.name, dialect);
+    for (const ref of rule.references) {
+      const key = normalizeSymbolName(ref.name, dialect);
+      if (key !== own) {
+        keys.add(key);
+      }
+    }
+  }
+  return keys;
+}
+
+function pushTo<T>(map: Map<string, T[]>, key: string, value: T): void {
+  const list = map.get(key);
+  if (list) {
+    list.push(value);
+  } else {
+    map.set(key, [value]);
+  }
 }
 
 /**
@@ -31,10 +67,9 @@ export function buildGrammarSymbolTable(
   const references = new Map<string, IdentifierReference[]>();
   for (const rule of doc.rules) {
     const key = normalizeSymbolName(rule.name, dialect);
-    definitions.set(key, [...(definitions.get(key) ?? []), rule]);
+    pushTo(definitions, key, rule);
     for (const ref of rule.references) {
-      const refKey = normalizeSymbolName(ref.name, dialect);
-      references.set(refKey, [...(references.get(refKey) ?? []), ref]);
+      pushTo(references, normalizeSymbolName(ref.name, dialect), ref);
     }
   }
   return { definitions, references };

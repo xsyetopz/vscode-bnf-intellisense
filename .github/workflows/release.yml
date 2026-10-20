@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
           token: ${{ github.token }}
@@ -69,15 +69,18 @@ jobs:
           fi
 
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.2.0
         with:
-          bun-version: latest
+          bun-version-file: package.json
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
       - name: Check formatting and lint
-        run: bunx biome check . --max-diagnostics 16384
+        run: bun run biome:check
+
+      - name: Lint Markdown
+        run: bun run md:check
 
       - name: Typecheck
         run: bun run typecheck
@@ -89,7 +92,7 @@ jobs:
         run: bun run package
 
       - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: vscode-bnf-intellisense-vsix
           path: "*.vsix"

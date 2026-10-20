@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -34,12 +34,11 @@
     "rules": {
       "preset": "recommended",
       "complexity": {
-        "useLiteralKeys": "warn"
+        "useLiteralKeys": "off"
       }
     },
     "domains": {
       "project": "recommended",
-      "react": "recommended",
       "test": "recommended",
       "types": "recommended"
     }

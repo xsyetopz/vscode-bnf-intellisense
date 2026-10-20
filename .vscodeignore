@@ -9,3 +9,15 @@ client/**
 bun.lock
 biome.jsonc
 .claude/**
+lefthook.yml
+commitlint.config.*
+.markdownlint*.jsonc
+bunfig.toml
+biome.json
+openspec/**
+HANDOVER.md
+.codegraph/**
+.github/**
+AGENTS.md
+CLAUDE.md
+GEMINI.md
